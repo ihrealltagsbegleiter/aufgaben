@@ -194,6 +194,11 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .tag-frog  { color: var(--accent2); border-color: var(--accent2); background: rgba(90,158,122,0.08); }
 .tag-eisen { color: var(--muted); }
 .tag-wait  { color: var(--warn); border-color: var(--warn); background: rgba(200,154,74,0.08); }
+.tag-horizon-today  { color: var(--today); border-color: var(--today); background: rgba(90,143,160,0.1); font-weight: 500; }
+.tag-horizon-week   { color: var(--accent); border-color: var(--accent); background: rgba(200,169,110,0.08); }
+.tag-horizon-month  { color: var(--accent2); border-color: var(--accent2); background: rgba(90,158,122,0.08); }
+.tag-horizon-later  { color: var(--muted); border-color: var(--border); }
+.tag-horizon-maybe  { color: var(--muted); border-color: var(--border); font-style: italic; }
 
 .due-tag { font-size: 0.68rem; }
 .due-overdue { color: var(--danger); }
@@ -1428,7 +1433,7 @@ function taskCard(task, isRecurring = false) {
   const contextLabels = { focus: '🧠 Fokus', quick: '⚡ 10 Min', phone: '📞 Tel', mobile: '🚶 Unterwegs', team: '👥 Team', research: '📋 Recherche', docs: '📂 Unterlagen', talk: '💬 Absprache', lexware: '💸 Lexware', pc: '💻 Am PC', it: '📲 IT-Entwicklung', people: '😬 people pleasing' };
 
   let tags = '';
-  if (currentTab === 'inbox' && false) {
+  if (true) {  // Horizont-Tag immer anzeigen
     tags += `<span class="tag tag-horizon-${task.horizon} tag-clickable" onclick="qeOpenField('${task.id}','horizon',event)">${horizonLabels[task.horizon]||''}</span>`;
   }
   if (task.impact) {
@@ -1522,7 +1527,7 @@ function taskCard(task, isRecurring = false) {
     const isOpen = (f) => af && af.id === tid && af.field === f;
 
     actions = `
-    <div class="qe-panel${isOpen('horizon')?' open':''}" id="qep-${tid}-horizon">
+    <div class="qe-panel open" id="qep-${tid}-horizon">
       <div class="qe-row">${!task.waiting?`<div class="horizon-picker" style="margin:0;">${horizonBtns}</div>`:'(Warten-Aufgabe)'}</div>
     </div>
     <div class="qe-panel${isOpen('eisen')?' open':''}" id="qep-${tid}-eisen">
@@ -3812,7 +3817,7 @@ function taskCard(task, isRecurring = false) {
   const contextLabels = { focus: '🧠 Fokus', quick: '⚡ 10 Min', phone: '📞 Tel', mobile: '🚶 Unterwegs', team: '👥 Team', research: '📋 Recherche', docs: '📂 Unterlagen', talk: '💬 Absprache', lexware: '💸 Lexware', pc: '💻 Am PC', it: '📲 IT-Entwicklung', people: '😬 people pleasing' };
 
   let tags = '';
-  if (currentTab === 'inbox' && false) {
+  if (true) {  // Horizont-Tag immer anzeigen
     tags += `<span class="tag tag-horizon-${task.horizon} tag-clickable" onclick="qeOpenField('${task.id}','horizon',event)">${horizonLabels[task.horizon]||''}</span>`;
   }
   if (task.impact) {
@@ -3906,7 +3911,7 @@ function taskCard(task, isRecurring = false) {
     const isOpen = (f) => af && af.id === tid && af.field === f;
 
     actions = `
-    <div class="qe-panel${isOpen('horizon')?' open':''}" id="qep-${tid}-horizon">
+    <div class="qe-panel open" id="qep-${tid}-horizon">
       <div class="qe-row">${!task.waiting?`<div class="horizon-picker" style="margin:0;">${horizonBtns}</div>`:'(Warten-Aufgabe)'}</div>
     </div>
     <div class="qe-panel${isOpen('eisen')?' open':''}" id="qep-${tid}-eisen">

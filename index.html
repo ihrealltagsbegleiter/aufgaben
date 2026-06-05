@@ -1325,6 +1325,7 @@ function autoEscalate() {
 
   tasks.forEach(t => {
     if (!t.due || t.waiting || (t.recurring && t.recurring !== 'none')) return;
+    if (!t.horizon || t.horizon === 'inbox') return; // Eingang-Aufgaben nie automatisch verschieben
     if (t.horizon === 'today' || t.horizon === 'maybe') return; // nie überschreiben
     const d = diffDays(t.due);
     if (d === null) return;
@@ -3709,6 +3710,7 @@ function autoEscalate() {
 
   tasks.forEach(t => {
     if (!t.due || t.waiting || (t.recurring && t.recurring !== 'none')) return;
+    if (!t.horizon || t.horizon === 'inbox') return; // Eingang-Aufgaben nie automatisch verschieben
     if (t.horizon === 'today' || t.horizon === 'maybe') return; // nie überschreiben
     const d = diffDays(t.due);
     if (d === null) return;

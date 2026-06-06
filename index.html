@@ -1588,6 +1588,7 @@ function taskCard(task, isRecurring = false) {
     </div>
     <div class="task-actions" style="margin-top:8px;">
       ${waitBtn}
+      <button class="task-action-btn" onclick="openEditModal('${tid}',event)">✏️ Bearbeiten</button>
       <button class="task-action-btn del" onclick="deleteTask('${tid}',event)">🗑 Löschen</button>
     </div>`;
   }
@@ -4032,6 +4033,7 @@ function taskCard(task, isRecurring = false) {
     </div>
     <div class="task-actions" style="margin-top:8px;">
       ${waitBtn}
+      <button class="task-action-btn" onclick="openEditModal('${tid}',event)">✏️ Bearbeiten</button>
       <button class="task-action-btn del" onclick="deleteTask('${tid}',event)">🗑 Löschen</button>
     </div>`;
   }

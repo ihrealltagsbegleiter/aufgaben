@@ -685,6 +685,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <div class="topbar-spacer"></div>
   <div class="topbar-actions">
     <span id="sync-status"></span>
+    <button class="btn-icon" id="sync-btn" onclick="manualSync()" title="Manuell synchronisieren" style="font-size:0.9rem;">⇅</button>
     <button class="btn-icon" onclick="authSignOut()" title="Abmelden" style="font-size:0.9rem;opacity:0.6;">⎋</button>
     <button class="btn-icon" id="search-btn" onclick="openSearch()" title="Suchen (S)">🔍</button>
     <button class="btn-icon" id="filter-btn" onclick="toggleFilterPanel(event)" title="Filtern">⚙</button>
@@ -2661,6 +2662,25 @@ function setSyncStatus(status) {
 
 window.addEventListener('online',  () => { setSyncStatus('syncing'); sbLoadAll().then(d => { if(d){tasks=d.tasks;projects=d.projects;if(d.log)logEntries=d.log;render();} setSyncStatus('ok'); }); });
 window.addEventListener('offline', () => setSyncStatus('offline'));
+
+async function manualSync() {
+  const btn = document.getElementById('sync-btn');
+  if (btn) { btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
+  setSyncStatus('syncing');
+  try {
+    await sbUpsertAll('tasks', tasks);
+    await sbUpsertAll('projects', projects);
+    const remote = await sbLoadAll();
+    if (remote) { tasks = remote.tasks; projects = remote.projects; if (remote.log) logEntries = remote.log; render(); }
+    setSyncStatus('ok');
+    showToast('✅ Sync abgeschlossen');
+  } catch(e) {
+    setSyncStatus('error');
+    showToast('❌ Sync fehlgeschlagen');
+  } finally {
+    if (btn) { btn.style.opacity = ''; btn.style.pointerEvents = ''; }
+  }
+}
 
 // ── FROG FIELDS ──
 let fDread = 3;

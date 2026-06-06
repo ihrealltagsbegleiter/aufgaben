@@ -800,7 +800,10 @@ input[type=number] { max-width: 80px; text-align: center; }
 
     <div class="field">
       <label>Fälligkeitsdatum (spätestens)</label>
-      <input type="date" id="f-due"/>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="date" id="f-due" style="flex:1;"/>
+        <input type="time" id="f-time" placeholder="Uhrzeit" style="width:110px;" title="Uhrzeit (optional, für Sortierung im Heute-Tab)"/>
+      </div>
     </div>
 
     <div class="field">
@@ -1217,11 +1220,12 @@ function urgency(task) {
 function fmtDue(task) {
   const d = diffDays(task.due);
   if (d === null) return null;
-  if (d < 0)  return { label: `${Math.abs(d)}T überfällig`, cls: 'due-overdue' };
-  if (d === 0) return { label: 'Heute fällig', cls: 'due-today' };
-  if (d === 1) return { label: 'Morgen fällig', cls: 'due-soon' };
-  if (d <= 3)  return { label: `in ${d} Tagen`, cls: 'due-soon' };
-  return { label: task.due.split('-').reverse().join('.'), cls: 'due-ok' };
+  const timeSuffix = task.due_time ? ` ${task.due_time} Uhr` : '';
+  if (d < 0)  return { label: `${Math.abs(d)}T überfällig${timeSuffix}`, cls: 'due-overdue' };
+  if (d === 0) return { label: `Heute${timeSuffix ? timeSuffix : ' fällig'}`, cls: 'due-today' };
+  if (d === 1) return { label: `Morgen${timeSuffix || ' fällig'}`, cls: 'due-soon' };
+  if (d <= 3)  return { label: `in ${d} Tagen${timeSuffix}`, cls: 'due-soon' };
+  return { label: task.due.split('-').reverse().join('.') + timeSuffix, cls: 'due-ok' };
 }
 
 // ── RECURRING LOGIC ──
@@ -1538,7 +1542,7 @@ function taskCard(task, isRecurring = false) {
       <div class="qe-row">${stars}</div>
     </div>
     <div class="qe-panel${isOpen('due')?' open':''}" id="qep-${tid}-due">
-      <div class="qe-row"><input type="date" class="qe-date" value="${dueVal}" onchange="qeSetField('${tid}','due',this.value,event)" onclick="event.stopPropagation()"/>${dueVal?`<button class="qe-btn" onclick="qeSetField('${tid}','due',null,event)">✕ entfernen</button>`:''}</div>
+      <div class="qe-row" style="flex-wrap:wrap;gap:6px;"><input type="date" class="qe-date" value="${dueVal}" onchange="qeSetField('${tid}','due',this.value,event)" onclick="event.stopPropagation()"/><input type="time" class="qe-date" value="${task.due_time||''}" title="Uhrzeit" onchange="qeSetField('${tid}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:95px;"/>${dueVal?`<button class="qe-btn" onclick="qeSetField('${tid}','due',null,event);qeSetField('${tid}','due_time',null,event)">✕ entfernen</button>`:''}</div>
     </div>
     <div class="qe-panel${isOpen('context')?' open':''}" id="qep-${tid}-context">
       <div class="qe-row" style="flex-wrap:wrap;">${ctxBtns}</div>
@@ -1773,6 +1777,7 @@ function openAddModal() {
   document.getElementById('f-title').value = '';
   document.getElementById('f-note').value = '';
   document.getElementById('f-due').value = '';
+  document.getElementById('f-time').value = '';
   populateProjectSelect();
   document.getElementById('f-project').value = '';
   setHorizonPill('today');
@@ -1794,6 +1799,7 @@ function openEditModal(id, e) {
   document.getElementById('f-title').value = task.title || '';
   document.getElementById('f-note').value = task.note || '';
   document.getElementById('f-due').value = task.due || '';
+  document.getElementById('f-time').value = task.due_time || '';
   populateProjectSelect();
   document.getElementById('f-project').value = task.projectId || '';
   setHorizonPill(task.horizon || 'today');
@@ -1837,6 +1843,7 @@ function saveTask() {
       task.note     = document.getElementById('f-note').value.trim();
       task.horizon  = fHorizon;
       task.due      = document.getElementById('f-due').value || null;
+      task.due_time = document.getElementById('f-time').value || null;
       task.impact   = fImpact;
       task.eisen    = fEisen;
       task.context  = fContext;
@@ -1854,6 +1861,7 @@ function saveTask() {
       note:      document.getElementById('f-note').value.trim(),
       horizon:   fHorizon,
       due:       document.getElementById('f-due').value || null,
+      due_time:  document.getElementById('f-time').value || null,
       impact:    fImpact,
       eisen:     fEisen,
       context:   fContext,
@@ -2581,12 +2589,22 @@ function applySortOrder(tasks) {
         const uOrd = { overdue:0, today:1, soon:2, ok:3 };
         va = uOrd[urgency(a)] ?? 3; vb = uOrd[urgency(b)] ?? 3;
         if (va !== vb) return (va - vb) * mul;
+        // Gleiche Dringlichkeit: Uhrzeit (mit Uhrzeit vor ohne)
+        const tA = a.due_time || '99:99';
+        const tB = b.due_time || '99:99';
+        if (tA !== tB) return tA.localeCompare(tB);
         return (parseInt(b.impact)||3) - (parseInt(a.impact)||3);
       }
       case 'impact':  return ((parseInt(a.impact)||3) - (parseInt(b.impact)||3)) * mul;
-      case 'due':
-        if (a.due && b.due) return a.due.localeCompare(b.due) * mul;
-        return a.due ? -mul : b.due ? mul : 0;
+      case 'due': {
+        // Primär: Datum; sekundär: Uhrzeit (ohne Uhrzeit = ans Ende innerhalb des Tages)
+        const dateA = a.due || '9999';
+        const dateB = b.due || '9999';
+        if (dateA !== dateB) return dateA.localeCompare(dateB) * mul;
+        const timeA = a.due_time || '99:99';
+        const timeB = b.due_time || '99:99';
+        return timeA.localeCompare(timeB) * mul;
+      }
       case 'eisen':   return ((a.eisen||9) - (b.eisen||9)) * mul;
       case 'created': return (a.created||'').localeCompare(b.created||'') * mul;
       case 'title':   return (a.title||'').localeCompare(b.title||'','de') * mul;
@@ -3602,11 +3620,12 @@ function urgency(task) {
 function fmtDue(task) {
   const d = diffDays(task.due);
   if (d === null) return null;
-  if (d < 0)  return { label: `${Math.abs(d)}T überfällig`, cls: 'due-overdue' };
-  if (d === 0) return { label: 'Heute fällig', cls: 'due-today' };
-  if (d === 1) return { label: 'Morgen fällig', cls: 'due-soon' };
-  if (d <= 3)  return { label: `in ${d} Tagen`, cls: 'due-soon' };
-  return { label: task.due.split('-').reverse().join('.'), cls: 'due-ok' };
+  const timeSuffix = task.due_time ? ` ${task.due_time} Uhr` : '';
+  if (d < 0)  return { label: `${Math.abs(d)}T überfällig${timeSuffix}`, cls: 'due-overdue' };
+  if (d === 0) return { label: `Heute${timeSuffix ? timeSuffix : ' fällig'}`, cls: 'due-today' };
+  if (d === 1) return { label: `Morgen${timeSuffix || ' fällig'}`, cls: 'due-soon' };
+  if (d <= 3)  return { label: `in ${d} Tagen${timeSuffix}`, cls: 'due-soon' };
+  return { label: task.due.split('-').reverse().join('.') + timeSuffix, cls: 'due-ok' };
 }
 
 // ── RECURRING LOGIC ──
@@ -3923,7 +3942,7 @@ function taskCard(task, isRecurring = false) {
       <div class="qe-row">${stars}</div>
     </div>
     <div class="qe-panel${isOpen('due')?' open':''}" id="qep-${tid}-due">
-      <div class="qe-row"><input type="date" class="qe-date" value="${dueVal}" onchange="qeSetField('${tid}','due',this.value,event)" onclick="event.stopPropagation()"/>${dueVal?`<button class="qe-btn" onclick="qeSetField('${tid}','due',null,event)">✕ entfernen</button>`:''}</div>
+      <div class="qe-row" style="flex-wrap:wrap;gap:6px;"><input type="date" class="qe-date" value="${dueVal}" onchange="qeSetField('${tid}','due',this.value,event)" onclick="event.stopPropagation()"/><input type="time" class="qe-date" value="${task.due_time||''}" title="Uhrzeit" onchange="qeSetField('${tid}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:95px;"/>${dueVal?`<button class="qe-btn" onclick="qeSetField('${tid}','due',null,event);qeSetField('${tid}','due_time',null,event)">✕ entfernen</button>`:''}</div>
     </div>
     <div class="qe-panel${isOpen('context')?' open':''}" id="qep-${tid}-context">
       <div class="qe-row" style="flex-wrap:wrap;">${ctxBtns}</div>
@@ -4109,6 +4128,7 @@ function openAddModal() {
   document.getElementById('f-title').value = '';
   document.getElementById('f-note').value = '';
   document.getElementById('f-due').value = '';
+  document.getElementById('f-time').value = '';
   populateProjectSelect();
   document.getElementById('f-project').value = '';
   setHorizonPill('today');
@@ -4130,6 +4150,7 @@ function openEditModal(id, e) {
   document.getElementById('f-title').value = task.title || '';
   document.getElementById('f-note').value = task.note || '';
   document.getElementById('f-due').value = task.due || '';
+  document.getElementById('f-time').value = task.due_time || '';
   populateProjectSelect();
   document.getElementById('f-project').value = task.projectId || '';
   setHorizonPill(task.horizon || 'today');
@@ -4173,6 +4194,7 @@ function saveTask() {
       task.note     = document.getElementById('f-note').value.trim();
       task.horizon  = fHorizon;
       task.due      = document.getElementById('f-due').value || null;
+      task.due_time = document.getElementById('f-time').value || null;
       task.impact   = fImpact;
       task.eisen    = fEisen;
       task.context  = fContext;
@@ -4190,6 +4212,7 @@ function saveTask() {
       note:      document.getElementById('f-note').value.trim(),
       horizon:   fHorizon,
       due:       document.getElementById('f-due').value || null,
+      due_time:  document.getElementById('f-time').value || null,
       impact:    fImpact,
       eisen:     fEisen,
       context:   fContext,
@@ -4901,12 +4924,22 @@ function applySortOrder(tasks) {
         const uOrd = { overdue:0, today:1, soon:2, ok:3 };
         va = uOrd[urgency(a)] ?? 3; vb = uOrd[urgency(b)] ?? 3;
         if (va !== vb) return (va - vb) * mul;
+        // Gleiche Dringlichkeit: Uhrzeit (mit Uhrzeit vor ohne)
+        const tA = a.due_time || '99:99';
+        const tB = b.due_time || '99:99';
+        if (tA !== tB) return tA.localeCompare(tB);
         return (parseInt(b.impact)||3) - (parseInt(a.impact)||3);
       }
       case 'impact':  return ((parseInt(a.impact)||3) - (parseInt(b.impact)||3)) * mul;
-      case 'due':
-        if (a.due && b.due) return a.due.localeCompare(b.due) * mul;
-        return a.due ? -mul : b.due ? mul : 0;
+      case 'due': {
+        // Primär: Datum; sekundär: Uhrzeit (ohne Uhrzeit = ans Ende innerhalb des Tages)
+        const dateA = a.due || '9999';
+        const dateB = b.due || '9999';
+        if (dateA !== dateB) return dateA.localeCompare(dateB) * mul;
+        const timeA = a.due_time || '99:99';
+        const timeB = b.due_time || '99:99';
+        return timeA.localeCompare(timeB) * mul;
+      }
       case 'eisen':   return ((a.eisen||9) - (b.eisen||9)) * mul;
       case 'created': return (a.created||'').localeCompare(b.created||'') * mul;
       case 'title':   return (a.title||'').localeCompare(b.title||'','de') * mul;

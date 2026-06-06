@@ -2711,7 +2711,7 @@ function showToast(msg) {
 // ── KEYBOARD ──
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeModal(); closeReviewModal(); closeProjectModal(); closeWaitModal(); closeQuick(); closeSearch(); }
-  if (e.target.matches('input,textarea,select')) return;
+  if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
   if (e.key === 'q' || e.key === 'Q') { e.preventDefault(); openQuick(); }
   if (e.key === 's' || e.key === 'S') { e.preventDefault(); openSearch(); }
   if (e.key === 'n' || e.key === 'N') {
@@ -5062,7 +5062,7 @@ function showToast(msg) {
 // ── KEYBOARD ──
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeModal(); closeReviewModal(); closeProjectModal(); closeWaitModal(); closeQuick(); closeSearch(); }
-  if (e.target.matches('input,textarea,select')) return;
+  if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
   if (e.key === 'q' || e.key === 'Q') { e.preventDefault(); openQuick(); }
   if (e.key === 's' || e.key === 'S') { e.preventDefault(); openSearch(); }
   if (e.key === 'n' || e.key === 'N') {

@@ -2729,6 +2729,8 @@ function showToast(msg) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeModal(); closeReviewModal(); closeProjectModal(); closeWaitModal(); closeQuick(); closeSearch(); }
   if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
+  if (document.activeElement && document.activeElement !== document.body && document.activeElement !== document.documentElement) return;
+  if (document.querySelector('.modal-overlay.open, .search-overlay.open, .quick-overlay.open')) return;
   if (e.key === 'q' || e.key === 'Q') { e.preventDefault(); openQuick(); }
   if (e.key === 's' || e.key === 'S') { e.preventDefault(); openSearch(); }
   if (e.key === 'n' || e.key === 'N') {
@@ -5093,6 +5095,8 @@ function showToast(msg) {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { closeModal(); closeReviewModal(); closeProjectModal(); closeWaitModal(); closeQuick(); closeSearch(); }
   if (e.target.matches('input,textarea,select') || e.target.isContentEditable) return;
+  if (document.activeElement && document.activeElement !== document.body && document.activeElement !== document.documentElement) return;
+  if (document.querySelector('.modal-overlay.open, .search-overlay.open, .quick-overlay.open')) return;
   if (e.key === 'q' || e.key === 'Q') { e.preventDefault(); openQuick(); }
   if (e.key === 's' || e.key === 'S') { e.preventDefault(); openSearch(); }
   if (e.key === 'n' || e.key === 'N') {

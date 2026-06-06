@@ -1491,8 +1491,11 @@ function taskCard(task, isRecurring = false) {
     const wOverdue = task.waitingDue && diffDays(task.waitingDue) !== null && diffDays(task.waitingDue) < 0;
     tags += `<span class="tag" style="color:${wOverdue?'var(--danger)':'var(--warn)'};border-color:${wOverdue?'var(--danger)':'var(--warn)'};background:${wOverdue?'rgba(196,107,90,0.1)':'rgba(196,154,74,0.1)'};">${wb}${wd}</span>`;
   }
+  // Datum/Uhrzeit-Tag: immer anzeigen (mit oder ohne gesetztes Datum)
   if (due) {
     tags += `<span class="due-tag ${due.cls} tag-clickable" onclick="qeOpenField('${task.id}','due',event)">📅 ${due.label}</span>`;
+  } else if (!task.waiting) {
+    tags += `<span class="tag tag-clickable" style="color:var(--muted);border-style:dashed;" onclick="qeOpenField('${task.id}','due',event)">📅 + Datum/Zeit</span>`;
   }
 
   let actions = '';
@@ -3907,8 +3910,11 @@ function taskCard(task, isRecurring = false) {
     const wOverdue = task.waitingDue && diffDays(task.waitingDue) !== null && diffDays(task.waitingDue) < 0;
     tags += `<span class="tag" style="color:${wOverdue?'var(--danger)':'var(--warn)'};border-color:${wOverdue?'var(--danger)':'var(--warn)'};background:${wOverdue?'rgba(196,107,90,0.1)':'rgba(196,154,74,0.1)'};">${wb}${wd}</span>`;
   }
+  // Datum/Uhrzeit-Tag: immer anzeigen (mit oder ohne gesetztes Datum)
   if (due) {
     tags += `<span class="due-tag ${due.cls} tag-clickable" onclick="qeOpenField('${task.id}','due',event)">📅 ${due.label}</span>`;
+  } else if (!task.waiting) {
+    tags += `<span class="tag tag-clickable" style="color:var(--muted);border-style:dashed;" onclick="qeOpenField('${task.id}','due',event)">📅 + Datum/Zeit</span>`;
   }
 
   let actions = '';

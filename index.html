@@ -1043,10 +1043,6 @@ const DONE_KEY    = 'iab_done_v2';
 const PROJECT_KEY = 'iab_projects_v1';
 const LOG_KEY     = 'iab_log_v1';
 
-'use strict';
-
-
-
 function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch { return []; }
 }
@@ -1097,6 +1093,7 @@ async function sbLoadLog() {
 }
 
 // ── SUPABASE SYNC ──
+let syncDebounce = {};
 
 function sbUpsertAll(table, items) {
   clearTimeout(syncDebounce[table]);
@@ -1194,6 +1191,21 @@ async function sbDelete(table, id) {
 }
 
 // ── STATE ──
+let tasks    = load();
+let projects = loadProjects();
+let logEntries = loadLog();
+let currentTab = 'inbox';
+let currentProjectFilter = null;
+let editingId = null;
+let editingProjectId = null;
+let expandedIds = new Set();
+
+// Pill state
+let fHorizon = 'today';
+let fImpact  = 3;    // 1–5 stars
+let fEisen   = null; // 1–4 Eisenhower quadrant, null = not set
+let fContext = null;
+let fRecur   = 'none';
 
 // ── DATE UTILS ──
 function todayStr() {
@@ -1601,6 +1613,60 @@ function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── QUICK EDIT TOGGLE ──
+let activeQeField = null; // { id, field }
+
+function qeOpenField(id, field, e) {
+  if (e) e.stopPropagation();
+  // Aufgabe aufklappen falls noch nicht
+  if (!expandedIds.has(id)) expandedIds.add(id);
+  // Toggle: selbes Feld nochmal → schließen
+  if (activeQeField && activeQeField.id === id && activeQeField.field === field) {
+    activeQeField = null;
+  } else {
+    activeQeField = { id, field };
+  }
+  renderList();
+  // Bei Datum: Picker automatisch öffnen
+  if (activeQeField && field === 'due') {
+    setTimeout(() => {
+      const inp = document.querySelector(`#qep-${id}-due input`);
+      if (inp) inp.showPicker && inp.showPicker();
+    }, 50);
+  }
+  // Bei Notiz: Textarea fokussieren
+  if (activeQeField && field === 'note') {
+    setTimeout(() => {
+      const ta = document.querySelector(`#qep-${id}-note textarea`);
+      if (ta) ta.focus();
+    }, 50);
+  }
+}
+
+// ── QUICK EDIT FELDER ──
+function qeSetField(id, field, value, e) {
+  if (e) e.stopPropagation();
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+
+  if (field === 'eisen' && task.eisen === value) {
+    task.eisen = null; // toggle off
+  } else if (field === 'context' && task.context === value) {
+    task.context = null; // toggle off
+  } else if (field === 'projectId' && task.projectId === value) {
+    task.projectId = null; // toggle off
+  } else if (field === 'due' && (value === null || value === '')) {
+    task.due = null;
+  } else {
+    task[field] = value;
+  }
+
+  save(tasks);
+  sbUpsertAll('tasks', tasks);
+  // Horizont-Änderung: vollständiges render() damit Tab-Badges + AutoEscalate aktualisiert
+  if (field === 'horizon') render(); else renderList();
+}
+
 // ── INLINE TITLE EDIT ──
 function startInlineEdit(id, e) {
   e.stopPropagation();
@@ -1719,19 +1785,15 @@ function setHorizonDirect(id, horizon, e) {
 function switchTab(tab) {
   currentTab = tab;
   currentProjectFilter = null;
-  document.querySelectorAll('.nav-tab').forEach(el => {
+  document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tab);
   });
-  dwUpdateFloatingTimer();
   // Update topbar button
   const addBtn = document.querySelector('.icon-btn.primary');
   if (addBtn) {
     if (tab === 'projects') {
       addBtn.textContent = '+ Projekt';
       addBtn.onclick = () => openProjectModal(null);
-    } else if (tab === 'waiting') {
-      addBtn.textContent = '+ Neu';
-      addBtn.onclick = () => openAddModal();
     } else {
       addBtn.textContent = '+ Neu';
       addBtn.onclick = () => openAddModal();
@@ -1876,7 +1938,6 @@ function setHorizonPill(val) {
     }
   });
 }
-const IMPACT_LABELS = ['','Minimal','Niedrig','Mittel','Hoch','Maximal'];
 
 function setImpact(val) {
   fImpact = val;
@@ -2006,6 +2067,8 @@ function reviewReschedule(id) {
 
 // ── PROJECTS ──
 
+let fpStatus = 'active';
+let fpColor  = '#c8a96e';
 
 function populateProjectSelect() {
   const sel = document.getElementById('f-project');
@@ -2182,6 +2245,7 @@ function renderProjectTaskList(p) {
 
 
 // ── WAITING ──
+let waitingTaskId = null;
 
 function openWaitModal(id, e) {
   e.stopPropagation();
@@ -2314,6 +2378,8 @@ function renderWaitingTab() {
 
 
 // ── QUICK CAPTURE ──
+let quickOpen = false;
+let quickImpact = 3;
 
 function toggleQuick() {
   quickOpen ? closeQuick() : openQuick();
@@ -2389,6 +2455,7 @@ function saveQuickTask() {
 // quick-input listener attached lazily on first open (element is after </body> injection)
 
 // ── FOCUS MODE ──
+let focusMode = false;
 
 function toggleFocusMode() {
   focusMode = !focusMode;
@@ -2404,6 +2471,8 @@ function toggleFocusMode() {
 
 
 // ── FILTER ──
+let activeFilters = { impact: [], eisen: [], context: [], type: [] };
+let filterProjectId = null;
 
 function toggleFilterPanel(e) {
   e.stopPropagation();
@@ -2490,6 +2559,15 @@ function applyFilters(tasks) {
 }
 
 
+// ── SORT ──
+const SORT_LABELS = {
+  urgency:'⚡ Dringlichkeit', impact:'★ Impact', due:'📅 Fälligkeit',
+  eisen:'Q Eisenhower', created:'🕐 Erstellt', title:'A Alphabetisch', project:'📁 Projekt'
+};
+const SORT_DEFAULT_DIR = {
+  urgency:'desc', impact:'desc', due:'asc', eisen:'asc', created:'desc', title:'asc', project:'asc'
+};
+let currentSort = { key:'urgency', dir:'desc' };
 
 function toggleSortMenu(e) {
   e.stopPropagation();
@@ -2586,7 +2664,27 @@ function setSyncStatus(status) {
 window.addEventListener('online',  () => { setSyncStatus('syncing'); sbLoadAll().then(d => { if(d){tasks=d.tasks;projects=d.projects;if(d.log)logEntries=d.log;render();} setSyncStatus('ok'); }); });
 window.addEventListener('offline', () => setSyncStatus('offline'));
 
+async function manualSync() {
+  const btn = document.getElementById('sync-btn');
+  if (btn) { btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
+  setSyncStatus('syncing');
+  try {
+    await sbUpsertAll('tasks', tasks);
+    await sbUpsertAll('projects', projects);
+    const remote = await sbLoadAll();
+    if (remote) { tasks = remote.tasks; projects = remote.projects; if (remote.log) logEntries = remote.log; render(); }
+    setSyncStatus('ok');
+    showToast('✅ Sync abgeschlossen');
+  } catch(e) {
+    setSyncStatus('error');
+    showToast('❌ Sync fehlgeschlagen');
+  } finally {
+    if (btn) { btn.style.opacity = ''; btn.style.pointerEvents = ''; }
+  }
+}
+
 // ── FROG FIELDS ──
+let fDread = 3;
 
 function initFrogField(isFrog, dread) {
   const cb = document.getElementById('f-frog');
@@ -2614,6 +2712,8 @@ function removeFrogFromTracker() {}
 
 
 // ── INLINE PROJECT CREATION ──
+let _inlineReturnToTask = false;
+let _inlineTaskSnapshot = null;
 
 function openInlineProjectModal() {
   _inlineReturnToTask = true;
@@ -2690,6 +2790,418 @@ function appendLog({ task, type }) {
 }
 
 // ── LOG TAB ──
+let logFilter = { period: '30', projectId: '', horizon: '', frog: '' };
+
+/* ──────────── KALENDER ──────────── */
+let calState = { year: new Date().getFullYear(), month: new Date().getMonth(), selectedDate: null };
+
+function calNextRecurDate(task) {
+  const done = loadDone();
+  const lastDone = done[task.id];
+  let intervalDays = 1;
+  if (task.recurring === 'daily')   intervalDays = 1;
+  else if (task.recurring === 'weekly')  intervalDays = 7;
+  else if (task.recurring === 'monthly') intervalDays = 30;
+  else if (task.recurring === 'custom')  intervalDays = task.recurDays || 7;
+  if (!lastDone) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    return today;
+  }
+  const last = new Date(lastDone + 'T00:00:00');
+  return new Date(last.getTime() + intervalDays * 86400000);
+}
+
+function calDayKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function calBuildEventMap(year, month) {
+  // Show 6 weeks around this month
+  const first = new Date(year, month, 1);
+  const startDow = first.getDay() === 0 ? 6 : first.getDay() - 1; // Mo=0
+  const gridStart = new Date(first); gridStart.setDate(1 - startDow);
+  const gridEnd = new Date(gridStart); gridEnd.setDate(gridStart.getDate() + 41);
+
+  const map = {}; // key: YYYY-MM-DD → [{title,type,proj}]
+  const addEvent = (dateObj, item) => {
+    const k = calDayKey(dateObj);
+    if (!map[k]) map[k] = [];
+    map[k].push(item);
+  };
+
+  // One-shot tasks with due date
+  tasks.forEach(t => {
+    if (!t.due || (t.recurring && t.recurring !== 'none')) return;
+    const d = new Date(t.due + 'T00:00:00');
+    if (d < gridStart || d > gridEnd) return;
+    const proj = projects.find(p => p.id === t.projectId);
+    const today = new Date(); today.setHours(0,0,0,0);
+    addEvent(d, { title: t.title, type: d < today ? 'overdue' : 'task', proj, frog: t.frog });
+  });
+
+  // Recurring tasks: next due date within grid
+  tasks.forEach(t => {
+    if (!t.recurring || t.recurring === 'none') return;
+    const next = calNextRecurDate(t);
+    next.setHours(0,0,0,0);
+    if (next < gridStart || next > gridEnd) return;
+    const proj = projects.find(p => p.id === t.projectId);
+    addEvent(next, { title: t.title, type: 'recurring', proj, recurLabel: recurLabel(t) });
+  });
+
+  return map;
+}
+
+function renderCalendarTab() {
+  const list = document.getElementById('task-list');
+  document.getElementById('stats-bar').style.display = 'none';
+
+  const { year, month, selectedDate } = calState;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayKey = calDayKey(today);
+
+  const first = new Date(year, month, 1);
+  const startDow = first.getDay() === 0 ? 6 : first.getDay() - 1;
+  const gridStart = new Date(first); gridStart.setDate(1 - startDow);
+
+  const monthName = first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+  const eventMap = calBuildEventMap(year, month);
+
+  // Build 42 cells
+  let cellsHtml = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
+    const key = calDayKey(d);
+    const isToday = key === todayKey;
+    const isOther = d.getMonth() !== month;
+    const isSelected = key === selectedDate;
+    const events = eventMap[key] || [];
+
+    const MAX_DOTS = 3;
+    const dotsHtml = events.slice(0, MAX_DOTS).map(ev => {
+      const cls = ev.type === 'recurring' ? 'recurring' : ev.type === 'overdue' ? 'overdue-dot' : '';
+      const icon = ev.frog ? '🐸 ' : ev.type === 'recurring' ? '↻ ' : '';
+      return `<div class="cal-dot ${cls}">${icon}${escHtml(ev.title)}</div>`;
+    }).join('');
+    const moreHtml = events.length > MAX_DOTS
+      ? `<div class="cal-dot more">+${events.length - MAX_DOTS} weitere</div>` : '';
+
+    const selStyle = isSelected ? 'outline:2px solid var(--accent);outline-offset:-2px;' : '';
+    cellsHtml += `<div class="cal-cell${isToday?' today':''}${isOther?' other-month':''}" style="${selStyle}" onclick="calSelectDay('${key}')">
+      <div class="cal-day-num">${d.getDate()}</div>
+      <div class="cal-dots">${dotsHtml}${moreHtml}</div>
+    </div>`;
+  }
+
+  // Detail panel
+  let detailHtml = '';
+  if (selectedDate && eventMap[selectedDate]) {
+    const d = new Date(selectedDate + 'T00:00:00');
+    const label = d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long' });
+    const items = eventMap[selectedDate].map(ev => {
+      const icon = ev.frog ? '🐸' : ev.type === 'recurring' ? '↻' : '📌';
+      const meta = ev.type === 'recurring' ? ev.recurLabel : (ev.proj ? `📁 ${ev.proj.name}` : '');
+      return `<div class="cal-detail-item">
+        <div class="cal-detail-icon">${icon}</div>
+        <div>
+          <div class="cal-detail-text">${escHtml(ev.title)}</div>
+          ${meta ? `<div class="cal-detail-meta">${escHtml(meta)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    detailHtml = `<div class="cal-detail open"><div class="cal-detail-inner">
+      <div class="cal-detail-title">${label}</div>${items}
+    </div></div>`;
+  } else {
+    detailHtml = `<div class="cal-detail"></div>`;
+  }
+
+  list.innerHTML = `<div class="cal-wrap">
+    <div class="cal-header">
+      <button class="cal-nav-btn" onclick="calNav(-1)">‹</button>
+      <div class="cal-title">${monthName}</div>
+      <button class="cal-nav-btn" onclick="calNav(1)">›</button>
+    </div>
+    <div class="cal-grid-head">
+      ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
+    </div>
+    <div class="cal-grid">${cellsHtml}</div>
+    <div class="cal-legend">
+      <div class="cal-leg-item"><div class="cal-leg-dot" style="background:rgba(200,169,110,0.4)"></div>Aufgabe</div>
+      <div class="cal-leg-item"><div class="cal-leg-dot" style="background:rgba(90,158,122,0.4)"></div>Wiederkehrend</div>
+      <div class="cal-leg-item"><div class="cal-leg-dot" style="background:rgba(212,99,90,0.4)"></div>Überfällig</div>
+    </div>
+    ${detailHtml}
+  </div>`;
+}
+
+function calNav(dir) {
+  calState.month += dir;
+  if (calState.month < 0) { calState.month = 11; calState.year--; }
+  if (calState.month > 11) { calState.month = 0; calState.year++; }
+  calState.selectedDate = null;
+  renderCalendarTab();
+}
+
+function calSelectDay(key) {
+  calState.selectedDate = calState.selectedDate === key ? null : key;
+  renderCalendarTab();
+}
+/* ──────────── END KALENDER ──────────── */
+
+
+/* ──────────── DEEP WORK ──────────── */
+let dwState = {
+  running: false,
+  elapsed: 0,       // seconds accumulated
+  startTs: null,    // Date.now() when timer started
+  showSave: false,
+  achievement: '',
+  subTab: 'timer',  // 'timer' | 'log' | 'stats'
+  sessions: [],
+  sessionTasks: [], // Aufgaben die während laufender Session erledigt wurden
+};
+(function() {
+  try { const s = localStorage.getItem('dw_sessions_v1'); if (s) dwState.sessions = JSON.parse(s); } catch {}
+})();
+let dwTick = null;
+
+function dwSave() {
+  try { localStorage.setItem('dw_sessions_v1', JSON.stringify(dwState.sessions)); } catch {}
+}
+function dwFmt(sec) {
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  if (h > 0) return `${h}h ${String(m).padStart(2,'0')}m`;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function dwTodayKey() { return new Date().toISOString().slice(0,10); }
+function dwFmtDate(iso) {
+  return new Date(iso).toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' });
+}
+function dwGroupByDay(sessions) {
+  const m = {};
+  sessions.forEach(s => {
+    const d = s.date.slice(0,10);
+    if (!m[d]) m[d] = { date:d, total:0, count:0 };
+    m[d].total += s.dur; m[d].count++;
+  });
+  return Object.values(m).sort((a,b) => b.date.localeCompare(a.date));
+}
+function dwStart() {
+  if (dwState.elapsed === 0) dwState.sessionTasks = []; // nur bei Neu-Start leeren, nicht bei Weiter
+  dwState.startTs = Date.now() - dwState.elapsed * 1000;
+  dwState.running = true;
+  dwTick = setInterval(() => {
+    dwState.elapsed = Math.floor((Date.now() - dwState.startTs) / 1000);
+    if (currentTab === 'deepwork') renderDeepWorkTab();
+    else dwUpdateFloatingTimer();
+  }, 1000);
+  renderDeepWorkTab();
+}
+function dwPause() {
+  dwState.running = false;
+  clearInterval(dwTick); dwTick = null;
+  if (currentTab === 'deepwork') renderDeepWorkTab(); else { dwUpdateFloatingTimer(); render(); }
+}
+function dwStop() {
+  dwState.running = false;
+  clearInterval(dwTick); dwTick = null;
+  if (dwState.elapsed > 5) dwState.showSave = true;
+  switchTab('deepwork');
+}
+function dwReset() {
+  dwState.running = false; dwState.elapsed = 0;
+  dwState.showSave = false; dwState.achievement = '';
+  clearInterval(dwTick); dwTick = null;
+  dwUpdateFloatingTimer();
+  if (currentTab === 'deepwork') renderDeepWorkTab();
+}
+function dwCommit() {
+  if (dwState.elapsed < 5) { dwReset(); return; }
+  const taskLines = dwState.sessionTasks.map(t => (t.frog ? '🐸 ' : '✓ ') + t.title);
+  const autoText = taskLines.length > 0 ? taskLines.join('\n') : '';
+  const manualText = dwState.achievement.trim();
+  const combined = [autoText, manualText].filter(Boolean).join('\n') || '(kein Eintrag)';
+  dwState.sessions.unshift({
+    id: Date.now().toString(),
+    date: new Date().toISOString(),
+    dur: dwState.elapsed,
+    text: combined,
+    taskCount: dwState.sessionTasks.length,
+  });
+  dwSave();
+  dwState.showSave = false; dwState.achievement = ''; dwState.elapsed = 0;
+  dwState.sessionTasks = [];
+  dwState.subTab = 'log';
+  renderDeepWorkTab();
+}
+function dwDeleteSession(id) {
+  dwState.sessions = dwState.sessions.filter(s => s.id !== id);
+  dwSave(); renderDeepWorkTab();
+}
+function dwSetSubTab(t) { dwState.subTab = t; renderDeepWorkTab(); }
+function dwSetAchievement(v) { dwState.achievement = v; }
+
+function dwUpdateFloatingTimer() {
+  const el = document.getElementById('dw-float');
+  const t  = document.getElementById('dw-float-time');
+  if (!el) return;
+  if (dwState.running && currentTab !== 'deepwork') {
+    el.style.display = 'flex';
+    if (t) t.textContent = dwFmt(dwState.elapsed);
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+
+function renderDeepWorkTab() {
+  const list = document.getElementById('task-list');
+  document.getElementById('stats-bar').style.display = 'none';
+
+  const DW_GOAL = 4 * 3600;
+  const el = dwState.elapsed;
+  const progress = Math.min(el / DW_GOAL, 1);
+  const r = 82, cx = 100, cy = 100, circ = 2 * Math.PI * r;
+  const dash = progress * circ;
+
+  const todayKey = dwTodayKey();
+  const dayGroups = dwGroupByDay(dwState.sessions);
+  const todayTotal = (dayGroups.find(g => g.date === todayKey) || {}).total || 0;
+  const grandTotal = dwState.sessions.reduce((a,s) => a+s.dur, 0);
+
+  // 14-day chart
+  const last14 = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    const g = dayGroups.find(x => x.date === key);
+    last14.push({ date: key, total: g ? g.total : 0 });
+  }
+  const maxSec = Math.max(...last14.map(d => d.total), 1);
+
+  // Sub-tabs
+  const subTabsHtml = `<div class="dw-sub-tabs">
+    ${['timer','log','stats'].map(t => `<button class="dw-sub-tab${dwState.subTab===t?' active':''}" onclick="dwSetSubTab('${t}')">${t==='timer'?'⏱ Timer':t==='log'?'📋 Log':'📊 Statistik'}</button>`).join('')}
+  </div>`;
+
+  let bodyHtml = '';
+
+  if (dwState.subTab === 'timer') {
+    const ringColor = dwState.running ? 'var(--accent)' : (el > 0 ? 'color-mix(in srgb, var(--accent) 60%, transparent)' : 'var(--border)');
+    bodyHtml = `
+      <div class="dw-ring-wrap">
+        <svg width="200" height="200" viewBox="0 0 200 200">
+          <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--surface)" stroke-width="10"/>
+          <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${ringColor}"
+            stroke-width="10" stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}" stroke-linecap="round"/>
+        </svg>
+        <div class="dw-ring-center">
+          <div class="dw-time${dwState.running?' running':''}">${dwFmt(el)}</div>
+          <div class="dw-status">${dwState.running ? 'läuft' : el > 0 ? 'pausiert' : 'bereit'}</div>
+          ${el > 0 ? `<div class="dw-goal-pct">${Math.round(progress*100)}% von 4h</div>` : ''}
+        </div>
+      </div>
+
+      ${!dwState.showSave ? `<div class="dw-controls">
+        ${!dwState.running
+          ? `<button class="dw-btn primary" onclick="dwStart()">${el===0 ? '▶ Start' : '▶ Weiter'}</button>`
+          : `<button class="dw-btn" onclick="dwPause()">⏸ Pause</button>`}
+        ${el > 0 ? `<button class="dw-btn" onclick="dwStop()">⏹ Speichern</button>` : ''}
+        ${el > 0 && !dwState.running ? `<button class="dw-btn ghost" onclick="dwReset()">✕ Verwerfen</button>` : ''}
+      </div>` : ''}
+
+      ${dwState.showSave ? `<div class="dw-save-box">
+        <div class="dw-save-label">Session: ${dwFmt(el)} · Zusammenfassung</div>
+        ${dwState.sessionTasks.length > 0 ? `<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:0.78rem;line-height:1.7;color:var(--text);">
+          ${dwState.sessionTasks.map(t=>`<div>${t.frog?'🐸':'✓'} ${escHtml(t.title)}</div>`).join('')}
+        </div>` : '<div style="font-size:0.75rem;color:var(--muted);">Keine Aufgaben während der Session abgehakt.</div>'}
+        <div class="dw-save-label" style="margin-top:4px;">Eigene Notiz (optional)</div>
+        <textarea class="dw-save-textarea" rows="2"
+          placeholder="z.B. Konzept fertiggestellt, E-Mails abgearbeitet…"
+          oninput="dwSetAchievement(this.value)"
+        >${escHtml(dwState.achievement)}</textarea>
+        <div class="dw-controls">
+          <button class="dw-btn primary" onclick="dwCommit()">✓ Speichern</button>
+          <button class="dw-btn ghost" onclick="dwReset()">✕ Verwerfen</button>
+        </div>
+      </div>` : ''}
+
+      ${todayTotal > 0 ? `<div class="dw-today-bar">
+        <div class="dw-today-lbl">Heute gesamt</div>
+        <div class="dw-today-val">${dwFmt(todayTotal)}</div>
+      </div>` : ''}
+    `;
+  }
+
+  if (dwState.subTab === 'log') {
+    bodyHtml = dwState.sessions.length === 0
+      ? `<div class="empty"><div class="empty-icon">🎯</div><div class="empty-text">Noch keine Sessions. Starte deinen ersten Deep-Work-Block.</div></div>`
+      : dwState.sessions.map(s => `
+        <div class="dw-log-card">
+          <div class="dw-log-dur">${dwFmt(s.dur)}</div>
+          <div class="dw-log-body">
+            <div class="dw-log-date">${dwFmtDate(s.date)}</div>
+            <div class="dw-log-text">${escHtml(s.text)}</div>
+          </div>
+          <button class="dw-log-del" onclick="dwDeleteSession('${s.id}')" title="Löschen">✕</button>
+        </div>`).join('');
+  }
+
+  if (dwState.subTab === 'stats') {
+    const barsHtml = last14.map(d => {
+      const h = d.total > 0 ? Math.max(5, Math.round((d.total/maxSec)*80)) : 2;
+      const cls = d.date === todayKey ? 'today' : d.total > 0 ? 'has-data' : '';
+      const lbl = new Date(d.date+'T12:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'});
+      return `<div class="dw-bar-col">
+        <div class="dw-bar ${cls}" style="height:${h}px" title="${dwFmt(d.total)}"></div>
+        <div class="dw-bar-lbl">${lbl}</div>
+      </div>`;
+    }).join('');
+
+    const top5 = [...dwState.sessions].sort((a,b)=>b.dur-a.dur).slice(0,5);
+
+    bodyHtml = `
+      <div class="dw-kpi-row">
+        <div class="dw-kpi"><div class="dw-kpi-val">${dwFmt(todayTotal)}</div><div class="dw-kpi-lbl">Heute</div></div>
+        <div class="dw-kpi"><div class="dw-kpi-val">${dwFmt(grandTotal)}</div><div class="dw-kpi-lbl">Gesamt</div></div>
+        <div class="dw-kpi"><div class="dw-kpi-val">${dwState.sessions.length}</div><div class="dw-kpi-lbl">Sessions</div></div>
+      </div>
+
+      <div class="dw-chart-wrap">
+        <div class="dw-section-title">14 Tage Verlauf</div>
+        <div class="dw-bars">${barsHtml}</div>
+      </div>
+
+      ${dayGroups.length > 0 ? `<div class="dw-chart-wrap">
+        <div class="dw-section-title">Tage-Übersicht</div>
+        ${dayGroups.slice(0,14).map(g=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:0.8rem;color:var(--muted);">${dwFmtDate(g.date+'T12:00:00')}</span>
+            <div style="display:flex;gap:14px;align-items:center;">
+              <span style="font-size:0.68rem;color:var(--muted);">${g.count}×</span>
+              <span style="font-family:var(--font-mono,monospace);font-weight:700;color:var(--accent);font-size:0.9rem;">${dwFmt(g.total)}</span>
+            </div>
+          </div>`).join('')}
+      </div>` : ''}
+
+      ${top5.length > 0 ? `<div class="dw-chart-wrap">
+        <div class="dw-section-title">Längste Sessions</div>
+        ${top5.map(s=>`
+          <div class="dw-top-row">
+            <div class="dw-top-left">
+              <div class="dw-top-date">${dwFmtDate(s.date)}</div>
+              <div class="dw-top-text">${escHtml(s.text)}</div>
+            </div>
+            <div class="dw-top-dur">${dwFmt(s.dur)}</div>
+          </div>`).join('')}
+      </div>` : ''}
+    `;
+  }
+
+  list.innerHTML = `<div class="dw-wrap">${subTabsHtml}${bodyHtml}</div>`;
+}
+/* ──────────── END DEEP WORK ──────────── */
 
 function renderLogTab() {
   const list = document.getElementById('task-list');
@@ -2804,6 +3316,13 @@ function renderOverdueTab() {
 }
 
 // ── MATRIX TAB ──
+const EISEN_META = {
+  1:{num:'I',  label:'Wichtig + Dringend',       sub:'Sofort selbst erledigen', cls:'matrix-q1',col:'var(--danger)'},
+  2:{num:'II', label:'Wichtig + Nicht dringend', sub:'Planen & einplanen',      cls:'matrix-q2',col:'var(--today)'},
+  3:{num:'III',label:'Unwichtig + Dringend',     sub:'Delegieren',              cls:'matrix-q3',col:'var(--warn)'},
+  4:{num:'IV', label:'Unwichtig + Nicht dringend',sub:'Eliminieren',           cls:'matrix-q4',col:'var(--muted)'},
+};
+const IMPACT_COLORS = ['','#4a4845','#6b6760','#c8a96e','#c49a4a','#c46b5a'];
 
 function renderMatrixTab() {
   const list = document.getElementById('task-list');
@@ -2831,6 +3350,9 @@ function renderMatrixTab() {
 }
 
 // ── IMPACT TAB ──
+const EISEN_SHORT = {1:'QI · Sofort',2:'QII · Planen',3:'QIII · Delegieren',4:'QIV · Eliminieren'};
+const impactColors2 = {5:'var(--danger)',4:'var(--warn)',3:'var(--accent)',2:'var(--muted)',1:'#3a3835'};
+const impactBg2     = {5:'rgba(196,107,90,0.06)',4:'rgba(196,154,74,0.05)',3:'rgba(200,169,110,0.05)',2:'transparent',1:'transparent'};
 
 function renderImpactTab() {
   const list = document.getElementById('task-list');
@@ -2864,6 +3386,8 @@ function renderImpactTab() {
 }
 
 // ── FROGS TAB ──
+const DREAD_LABELS = ['','😊 Kein Problem','🙂 Niedrig','😐 Mittel','😟 Hoch','😰 Sehr hoch'];
+const DREAD_COLORS = {5:'var(--danger)',4:'var(--warn)',3:'var(--accent)',2:'var(--accent2)',1:'var(--muted)'};
 
 function renderFrogsTab() {
   const list = document.getElementById('task-list');
@@ -2973,10 +3497,6 @@ function checkTaskFromSearch(id, e) {
   checkTask(id, e);
   closeSearch();
 }
-
-
-
-
 
 // ── PWA SERVICE WORKER ──
 if ('serviceWorker' in navigator) {

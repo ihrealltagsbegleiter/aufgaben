@@ -1496,21 +1496,12 @@ function taskCard(task, isRecurring = false) {
     const wOverdue = task.waitingDue && diffDays(task.waitingDue) !== null && diffDays(task.waitingDue) < 0;
     tags += `<span class="tag" style="color:${wOverdue?'var(--danger)':'var(--warn)'};border-color:${wOverdue?'var(--danger)':'var(--warn)'};background:${wOverdue?'rgba(196,107,90,0.1)':'rgba(196,154,74,0.1)'};">${wb}${wd}</span>`;
   }
-  // Datum/Uhrzeit: immer sichtbar, Inline-Panel direkt im Tag-Bereich
+  // Datum/Uhrzeit-Tag: immer sichtbar, Klick klappt Karte auf (Panel im actions-Block)
   const dueTagLabel = due ? `📅 ${due.label}` : '📅 + Datum/Zeit';
   const dueTagCls = due ? `due-tag ${due.cls} tag-clickable` : 'tag tag-clickable';
   const dueTagStyle = due ? '' : 'color:var(--muted);border-style:dashed;';
   if (!task.waiting) {
     tags += `<span class="${dueTagCls}" style="${dueTagStyle}" onclick="qeOpenField('${task.id}','due',event)">${dueTagLabel}</span>`;
-    // Inline-Panel: erscheint direkt nach dem Tag wenn activeQeField passt
-    const dueInlineOpen = activeQeField && activeQeField.id === task.id && activeQeField.field === 'due';
-    if (dueInlineOpen) {
-      const dv = task.due || '';
-      const dvTime = task.due_time || '';
-      const tid2 = task.id;
-      const clearBtn = dv ? `<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('${tid2}','due',null,event);qeSetField('${tid2}','due_time',null,event)">✕</button>` : '';
-      tags += `<span class="due-inline-panel" onclick="event.stopPropagation()"><input type="date" class="qe-date" value="${dv}" onchange="qeSetField('${tid2}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/><input type="time" class="qe-date" value="${dvTime}" onchange="qeSetField('${tid2}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>${clearBtn}</span>`;
-    }
   }
 
   let actions = '';
@@ -3930,21 +3921,12 @@ function taskCard(task, isRecurring = false) {
     const wOverdue = task.waitingDue && diffDays(task.waitingDue) !== null && diffDays(task.waitingDue) < 0;
     tags += `<span class="tag" style="color:${wOverdue?'var(--danger)':'var(--warn)'};border-color:${wOverdue?'var(--danger)':'var(--warn)'};background:${wOverdue?'rgba(196,107,90,0.1)':'rgba(196,154,74,0.1)'};">${wb}${wd}</span>`;
   }
-  // Datum/Uhrzeit: immer sichtbar, Inline-Panel direkt im Tag-Bereich
+  // Datum/Uhrzeit-Tag: immer sichtbar, Klick klappt Karte auf (Panel im actions-Block)
   const dueTagLabel = due ? `📅 ${due.label}` : '📅 + Datum/Zeit';
   const dueTagCls = due ? `due-tag ${due.cls} tag-clickable` : 'tag tag-clickable';
   const dueTagStyle = due ? '' : 'color:var(--muted);border-style:dashed;';
   if (!task.waiting) {
     tags += `<span class="${dueTagCls}" style="${dueTagStyle}" onclick="qeOpenField('${task.id}','due',event)">${dueTagLabel}</span>`;
-    // Inline-Panel: erscheint direkt nach dem Tag wenn activeQeField passt
-    const dueInlineOpen = activeQeField && activeQeField.id === task.id && activeQeField.field === 'due';
-    if (dueInlineOpen) {
-      const dv = task.due || '';
-      const dvTime = task.due_time || '';
-      const tid2 = task.id;
-      const clearBtn = dv ? `<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('${tid2}','due',null,event);qeSetField('${tid2}','due_time',null,event)">✕</button>` : '';
-      tags += `<span class="due-inline-panel" onclick="event.stopPropagation()"><input type="date" class="qe-date" value="${dv}" onchange="qeSetField('${tid2}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/><input type="time" class="qe-date" value="${dvTime}" onchange="qeSetField('${tid2}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>${clearBtn}</span>`;
-    }
   }
 
   let actions = '';

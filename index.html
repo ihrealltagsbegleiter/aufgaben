@@ -1506,11 +1506,10 @@ function taskCard(task, isRecurring = false) {
     const dueInlineOpen = activeQeField && activeQeField.id === task.id && activeQeField.field === 'due';
     if (dueInlineOpen) {
       const dv = task.due || '';
-      tags += \`<span class="due-inline-panel" onclick="event.stopPropagation()">
-        <input type="date" class="qe-date" value="\${dv}" onchange="qeSetField('\${task.id}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/>
-        <input type="time" class="qe-date" value="\${task.due_time||''}" onchange="qeSetField('\${task.id}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>
-        \${dv ? \`<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('\${task.id}','due',null,event);qeSetField('\${task.id}','due_time',null,event)">✕</button>\` : ''}
-      </span>\`;
+      const dvTime = task.due_time || '';
+      const tid2 = task.id;
+      const clearBtn = dv ? `<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('${tid2}','due',null,event);qeSetField('${tid2}','due_time',null,event)">✕</button>` : '';
+      tags += `<span class="due-inline-panel" onclick="event.stopPropagation()"><input type="date" class="qe-date" value="${dv}" onchange="qeSetField('${tid2}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/><input type="time" class="qe-date" value="${dvTime}" onchange="qeSetField('${tid2}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>${clearBtn}</span>`;
     }
   }
 
@@ -3941,11 +3940,10 @@ function taskCard(task, isRecurring = false) {
     const dueInlineOpen = activeQeField && activeQeField.id === task.id && activeQeField.field === 'due';
     if (dueInlineOpen) {
       const dv = task.due || '';
-      tags += \`<span class="due-inline-panel" onclick="event.stopPropagation()">
-        <input type="date" class="qe-date" value="\${dv}" onchange="qeSetField('\${task.id}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/>
-        <input type="time" class="qe-date" value="\${task.due_time||''}" onchange="qeSetField('\${task.id}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>
-        \${dv ? \`<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('\${task.id}','due',null,event);qeSetField('\${task.id}','due_time',null,event)">✕</button>\` : ''}
-      </span>\`;
+      const dvTime = task.due_time || '';
+      const tid2 = task.id;
+      const clearBtn = dv ? `<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('${tid2}','due',null,event);qeSetField('${tid2}','due_time',null,event)">✕</button>` : '';
+      tags += `<span class="due-inline-panel" onclick="event.stopPropagation()"><input type="date" class="qe-date" value="${dv}" onchange="qeSetField('${tid2}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/><input type="time" class="qe-date" value="${dvTime}" onchange="qeSetField('${tid2}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>${clearBtn}</span>`;
     }
   }
 

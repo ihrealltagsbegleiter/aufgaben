@@ -799,11 +799,15 @@ input[type=number] { max-width: 80px; text-align: center; }
     </div>
 
     <div class="field">
-      <label>Fälligkeitsdatum (spätestens)</label>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="date" id="f-due" style="flex:1;"/>
-        <input type="time" id="f-time" placeholder="Uhrzeit" style="width:110px;" title="Uhrzeit (optional, für Sortierung im Heute-Tab)"/>
+      <label>Fälligkeitsdatum & Uhrzeit</label>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="date" id="f-due" style="flex:1;min-width:130px;"/>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="font-size:0.72rem;color:var(--muted);white-space:nowrap;">🕐 Uhrzeit</span>
+          <input type="time" id="f-time" style="width:105px;" title="Uhrzeit (optional) – sortiert Aufgaben im Heute-Tab nach Tageszeit"/>
+        </div>
       </div>
+      <div style="font-size:0.68rem;color:var(--muted);margin-top:4px;">Uhrzeit auch ohne Datum sinnvoll – sortiert wiederkehrende Aufgaben im Heute-Tab.</div>
     </div>
 
     <div class="field">
@@ -1421,8 +1425,24 @@ function renderList() {
     html += `<div class="section-header"><span class="section-label">Zu sortieren</span><div class="section-line"></div></div>`;
     sorted.forEach(t => { html += taskCard(t); });
   } else if (currentTab === 'recurring') {
-    html += `<div class="section-header"><span class="section-label">Jetzt fällig</span><div class="section-line"></div></div>`;
-    sorted.forEach(t => { html += taskCard(t, true); });
+    // Wiederkehrende Aufgaben: primär nach Uhrzeit sortieren, dann alphabetisch
+    const recurSorted = [...sorted].sort((a, b) => {
+      const tA = a.due_time || '99:99';
+      const tB = b.due_time || '99:99';
+      if (tA !== tB) return tA.localeCompare(tB);
+      return (a.title || '').localeCompare(b.title || '', 'de');
+    });
+    const withTime = recurSorted.filter(t => t.due_time);
+    const noTime = recurSorted.filter(t => !t.due_time);
+    if (withTime.length) {
+      html += `<div class="section-header"><span class="section-label">📅 Nach Uhrzeit</span><div class="section-line"></div></div>`;
+      withTime.forEach(t => { html += taskCard(t, true); });
+    }
+    if (noTime.length) {
+      if (withTime.length) html += `<div class="section-header"><span class="section-label">Ohne Uhrzeit</span><div class="section-line"></div></div>`;
+      else html += `<div class="section-header"><span class="section-label">Jetzt fällig</span><div class="section-line"></div></div>`;
+      noTime.forEach(t => { html += taskCard(t, true); });
+    }
   } else {
     sorted.forEach(t => { html += taskCard(t); });
   }
@@ -3821,8 +3841,24 @@ function renderList() {
     html += `<div class="section-header"><span class="section-label">Zu sortieren</span><div class="section-line"></div></div>`;
     sorted.forEach(t => { html += taskCard(t); });
   } else if (currentTab === 'recurring') {
-    html += `<div class="section-header"><span class="section-label">Jetzt fällig</span><div class="section-line"></div></div>`;
-    sorted.forEach(t => { html += taskCard(t, true); });
+    // Wiederkehrende Aufgaben: primär nach Uhrzeit sortieren, dann alphabetisch
+    const recurSorted = [...sorted].sort((a, b) => {
+      const tA = a.due_time || '99:99';
+      const tB = b.due_time || '99:99';
+      if (tA !== tB) return tA.localeCompare(tB);
+      return (a.title || '').localeCompare(b.title || '', 'de');
+    });
+    const withTime = recurSorted.filter(t => t.due_time);
+    const noTime = recurSorted.filter(t => !t.due_time);
+    if (withTime.length) {
+      html += `<div class="section-header"><span class="section-label">📅 Nach Uhrzeit</span><div class="section-line"></div></div>`;
+      withTime.forEach(t => { html += taskCard(t, true); });
+    }
+    if (noTime.length) {
+      if (withTime.length) html += `<div class="section-header"><span class="section-label">Ohne Uhrzeit</span><div class="section-line"></div></div>`;
+      else html += `<div class="section-header"><span class="section-label">Jetzt fällig</span><div class="section-line"></div></div>`;
+      noTime.forEach(t => { html += taskCard(t, true); });
+    }
   } else {
     sorted.forEach(t => { html += taskCard(t); });
   }

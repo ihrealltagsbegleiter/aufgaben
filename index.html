@@ -675,7 +675,7 @@ input[type=number] { max-width: 80px; text-align: center; }
     <input class="auth-input" type="password" id="auth-pw" placeholder="Passwort" autocomplete="current-password"/>
     <button class="auth-btn" id="auth-btn" onclick="authSignIn()">Anmelden</button>
     <div class="auth-error" id="auth-error"></div>
-    <div class="auth-hint">Kein Account? <a href="#" onclick="authSignUp();return false;" style="color:var(--accent);">Registrieren</a></div>
+    <div class="auth-hint">Kein Account? <a href="#" onclick="authSignUp();return false;" style="color:var(--accent);">Registrieren</a> · <a href="#" onclick="authResetPassword();return false;" style="color:var(--muted);">Passwort vergessen?</a></div>
   </div>
 </div>
 
@@ -5503,6 +5503,28 @@ async function authSignIn() {
     await authLaunchApp(data);
   } catch(e) { err.textContent = 'Netzwerkfehler. Offline?'; }
   finally { btn.disabled = false; btn.textContent = 'Anmelden'; }
+}
+
+async function authResetPassword() {
+  const email = document.getElementById('auth-email').value.trim();
+  const err = document.getElementById('auth-error');
+  err.textContent = '';
+  if (!email) { err.textContent = 'Bitte E-Mail eingeben.'; err.style.color = 'var(--warn)'; return; }
+  try {
+    const res = await fetch(SB_URL + '/auth/v1/recover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY },
+      body: JSON.stringify({ email })
+    });
+    if (res.ok) {
+      err.style.color = 'var(--ok, #5a9e7a)';
+      err.textContent = '✅ Recovery-Mail gesendet – bitte Postfach prüfen.';
+    } else {
+      const d = await res.json();
+      err.style.color = 'var(--danger)';
+      err.textContent = d.msg || 'Fehler beim Senden.';
+    }
+  } catch(e) { err.style.color = 'var(--danger)'; err.textContent = 'Netzwerkfehler.'; }
 }
 
 async function authSignUp() {

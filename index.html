@@ -199,6 +199,9 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .tag-horizon-month  { color: var(--accent2); border-color: var(--accent2); background: rgba(90,158,122,0.08); }
 .tag-horizon-later  { color: var(--muted); border-color: var(--border); }
 .tag-horizon-maybe  { color: var(--muted); border-color: var(--border); font-style: italic; }
+.horizon-select { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 14px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23888'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 4px center; }
+.horizon-select:focus { outline: none; }
+.due-inline-panel { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 4px; padding: 5px 8px; background: var(--surface2,#1a1917); border: 1px solid var(--border); border-radius: 7px; }
 
 .due-tag { font-size: 0.68rem; }
 .due-overdue { color: var(--danger); }
@@ -1458,9 +1461,11 @@ function taskCard(task, isRecurring = false) {
   const contextLabels = { focus: '🧠 Fokus', quick: '⚡ 10 Min', phone: '📞 Tel', mobile: '🚶 Unterwegs', team: '👥 Team', research: '📋 Recherche', docs: '📂 Unterlagen', talk: '💬 Absprache', lexware: '💸 Lexware', pc: '💻 Am PC', it: '📲 IT-Entwicklung', people: '😬 people pleasing' };
 
   let tags = '';
-  if (true) {  // Horizont-Tag immer anzeigen
-    tags += `<span class="tag tag-horizon-${task.horizon} tag-clickable" onclick="qeOpenField('${task.id}','horizon',event)">${horizonLabels[task.horizon]||''}</span>`;
-  }
+  // Horizont: inline <select> – direkt änderbar ohne Aufklappen
+  const horizonOpts = ['today','week','month','later','maybe'].map(h =>
+    `<option value="${h}"${task.horizon===h?' selected':''}>${horizonLabels[h]}</option>`
+  ).join('');
+  tags += `<select class="tag tag-horizon-${task.horizon} horizon-select" onchange="qeSetField('${task.id}','horizon',this.value,event)" onclick="event.stopPropagation()" title="Kategorie ändern">${horizonOpts}</select>`;
   if (task.impact) {
     const imp = parseInt(task.impact) || 3;
     const stars = '★'.repeat(imp) + '☆'.repeat(5 - imp);
@@ -1491,11 +1496,22 @@ function taskCard(task, isRecurring = false) {
     const wOverdue = task.waitingDue && diffDays(task.waitingDue) !== null && diffDays(task.waitingDue) < 0;
     tags += `<span class="tag" style="color:${wOverdue?'var(--danger)':'var(--warn)'};border-color:${wOverdue?'var(--danger)':'var(--warn)'};background:${wOverdue?'rgba(196,107,90,0.1)':'rgba(196,154,74,0.1)'};">${wb}${wd}</span>`;
   }
-  // Datum/Uhrzeit-Tag: immer anzeigen (mit oder ohne gesetztes Datum)
-  if (due) {
-    tags += `<span class="due-tag ${due.cls} tag-clickable" onclick="qeOpenField('${task.id}','due',event)">📅 ${due.label}</span>`;
-  } else if (!task.waiting) {
-    tags += `<span class="tag tag-clickable" style="color:var(--muted);border-style:dashed;" onclick="qeOpenField('${task.id}','due',event)">📅 + Datum/Zeit</span>`;
+  // Datum/Uhrzeit: immer sichtbar, Inline-Panel direkt im Tag-Bereich
+  const dueTagLabel = due ? `📅 ${due.label}` : '📅 + Datum/Zeit';
+  const dueTagCls = due ? `due-tag ${due.cls} tag-clickable` : 'tag tag-clickable';
+  const dueTagStyle = due ? '' : 'color:var(--muted);border-style:dashed;';
+  if (!task.waiting) {
+    tags += `<span class="${dueTagCls}" style="${dueTagStyle}" onclick="qeOpenField('${task.id}','due',event)">${dueTagLabel}</span>`;
+    // Inline-Panel: erscheint direkt nach dem Tag wenn activeQeField passt
+    const dueInlineOpen = activeQeField && activeQeField.id === task.id && activeQeField.field === 'due';
+    if (dueInlineOpen) {
+      const dv = task.due || '';
+      tags += \`<span class="due-inline-panel" onclick="event.stopPropagation()">
+        <input type="date" class="qe-date" value="\${dv}" onchange="qeSetField('\${task.id}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/>
+        <input type="time" class="qe-date" value="\${task.due_time||''}" onchange="qeSetField('\${task.id}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>
+        \${dv ? \`<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('\${task.id}','due',null,event);qeSetField('\${task.id}','due_time',null,event)">✕</button>\` : ''}
+      </span>\`;
+    }
   }
 
   let actions = '';
@@ -1655,7 +1671,8 @@ function qeSetField(id, field, value, e) {
 
   save(tasks);
   sbUpsertAll('tasks', tasks);
-  renderList(); // Re-render damit Tags + Felder aktualisiert werden
+  // Horizont-Änderung: vollständiges render() damit Tab-Badges + AutoEscalate aktualisiert
+  if (field === 'horizon') render(); else renderList();
 }
 
 // ── INLINE TITLE EDIT ──
@@ -3877,9 +3894,11 @@ function taskCard(task, isRecurring = false) {
   const contextLabels = { focus: '🧠 Fokus', quick: '⚡ 10 Min', phone: '📞 Tel', mobile: '🚶 Unterwegs', team: '👥 Team', research: '📋 Recherche', docs: '📂 Unterlagen', talk: '💬 Absprache', lexware: '💸 Lexware', pc: '💻 Am PC', it: '📲 IT-Entwicklung', people: '😬 people pleasing' };
 
   let tags = '';
-  if (true) {  // Horizont-Tag immer anzeigen
-    tags += `<span class="tag tag-horizon-${task.horizon} tag-clickable" onclick="qeOpenField('${task.id}','horizon',event)">${horizonLabels[task.horizon]||''}</span>`;
-  }
+  // Horizont: inline <select> – direkt änderbar ohne Aufklappen
+  const horizonOpts = ['today','week','month','later','maybe'].map(h =>
+    `<option value="${h}"${task.horizon===h?' selected':''}>${horizonLabels[h]}</option>`
+  ).join('');
+  tags += `<select class="tag tag-horizon-${task.horizon} horizon-select" onchange="qeSetField('${task.id}','horizon',this.value,event)" onclick="event.stopPropagation()" title="Kategorie ändern">${horizonOpts}</select>`;
   if (task.impact) {
     const imp = parseInt(task.impact) || 3;
     const stars = '★'.repeat(imp) + '☆'.repeat(5 - imp);
@@ -3910,11 +3929,22 @@ function taskCard(task, isRecurring = false) {
     const wOverdue = task.waitingDue && diffDays(task.waitingDue) !== null && diffDays(task.waitingDue) < 0;
     tags += `<span class="tag" style="color:${wOverdue?'var(--danger)':'var(--warn)'};border-color:${wOverdue?'var(--danger)':'var(--warn)'};background:${wOverdue?'rgba(196,107,90,0.1)':'rgba(196,154,74,0.1)'};">${wb}${wd}</span>`;
   }
-  // Datum/Uhrzeit-Tag: immer anzeigen (mit oder ohne gesetztes Datum)
-  if (due) {
-    tags += `<span class="due-tag ${due.cls} tag-clickable" onclick="qeOpenField('${task.id}','due',event)">📅 ${due.label}</span>`;
-  } else if (!task.waiting) {
-    tags += `<span class="tag tag-clickable" style="color:var(--muted);border-style:dashed;" onclick="qeOpenField('${task.id}','due',event)">📅 + Datum/Zeit</span>`;
+  // Datum/Uhrzeit: immer sichtbar, Inline-Panel direkt im Tag-Bereich
+  const dueTagLabel = due ? `📅 ${due.label}` : '📅 + Datum/Zeit';
+  const dueTagCls = due ? `due-tag ${due.cls} tag-clickable` : 'tag tag-clickable';
+  const dueTagStyle = due ? '' : 'color:var(--muted);border-style:dashed;';
+  if (!task.waiting) {
+    tags += `<span class="${dueTagCls}" style="${dueTagStyle}" onclick="qeOpenField('${task.id}','due',event)">${dueTagLabel}</span>`;
+    // Inline-Panel: erscheint direkt nach dem Tag wenn activeQeField passt
+    const dueInlineOpen = activeQeField && activeQeField.id === task.id && activeQeField.field === 'due';
+    if (dueInlineOpen) {
+      const dv = task.due || '';
+      tags += \`<span class="due-inline-panel" onclick="event.stopPropagation()">
+        <input type="date" class="qe-date" value="\${dv}" onchange="qeSetField('\${task.id}','due',this.value,event)" onclick="event.stopPropagation()" style="font-size:0.75rem;padding:2px 6px;"/>
+        <input type="time" class="qe-date" value="\${task.due_time||''}" onchange="qeSetField('\${task.id}','due_time',this.value||null,event)" onclick="event.stopPropagation()" style="width:90px;font-size:0.75rem;padding:2px 6px;"/>
+        \${dv ? \`<button class="qe-btn" style="font-size:0.7rem;padding:2px 7px;" onclick="qeSetField('\${task.id}','due',null,event);qeSetField('\${task.id}','due_time',null,event)">✕</button>\` : ''}
+      </span>\`;
+    }
   }
 
   let actions = '';

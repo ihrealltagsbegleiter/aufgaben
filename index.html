@@ -52,7 +52,7 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   flex-shrink: 0;
 }
 .topbar-spacer { flex: 1; }
-.topbar-actions { display: flex; gap: 4px; align-items: center; }
+.topbar-actions { display: flex; gap: 4px; align-items: center; overflow: visible; flex-shrink: 0; }
 #sync-status {
   font-size: 0.62rem; font-family: 'Inter', sans-serif;
   color: var(--muted); margin-right: 4px;
@@ -685,7 +685,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <div class="topbar-spacer"></div>
   <div class="topbar-actions">
     <span id="sync-status"></span>
-    <button class="btn-icon" id="sync-btn" onclick="manualSync()" title="Manuell synchronisieren" style="font-size:0.9rem;">⇅</button>
+    <button class="btn-icon" id="sync-btn" onclick="manualSync()" title="Manuell synchronisieren" style="font-size:0.85rem;flex-shrink:0;">🔄</button>
     <button class="btn-icon" onclick="authSignOut()" title="Abmelden" style="font-size:0.9rem;opacity:0.6;">⎋</button>
     <button class="btn-icon" id="search-btn" onclick="openSearch()" title="Suchen (S)">🔍</button>
     <button class="btn-icon" id="filter-btn" onclick="toggleFilterPanel(event)" title="Filtern">⚙</button>

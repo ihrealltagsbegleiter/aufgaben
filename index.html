@@ -1043,6 +1043,8 @@ const DONE_KEY    = 'iab_done_v2';
 const PROJECT_KEY = 'iab_projects_v1';
 const LOG_KEY     = 'iab_log_v1';
 
+const IMPACT_LABELS = ['','Minimal','Niedrig','Mittel','Hoch','Maximal'];
+
 function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch { return []; }
 }

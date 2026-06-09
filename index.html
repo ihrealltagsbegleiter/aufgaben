@@ -1787,6 +1787,7 @@ function setHorizonDirect(id, horizon, e) {
 function switchTab(tab) {
   currentTab = tab;
   currentProjectFilter = null;
+  expandedIds.clear();
   document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tab);
   });

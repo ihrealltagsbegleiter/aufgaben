@@ -1153,7 +1153,7 @@ async function sbLoadAll() {
     const taskMap = {};
     localTasks.forEach(t => taskMap[t.id] = t);
     remoteTasks.forEach(t => taskMap[t.id] = t);
-    const mergedTasks = Object.values(taskMap);
+    const mergedTasks = Object.values(taskMap).filter(t => !t.deleted);
 
     const projMap = {};
     localProjects.forEach(p => projMap[p.id] = p);
@@ -1190,6 +1190,23 @@ async function sbDelete(table, id) {
       headers: SB_HEADERS
     });
   } catch(e) { console.warn('Delete sync error:', e); }
+}
+
+// Upsert a tombstone (deleted:true) so all devices stop resurrecting the task,
+// then hard-delete from Supabase after a short delay
+async function sbUpsertTombstone(deletedTask) {
+  if (!navigator.onLine) { sbDelete('tasks', deletedTask.id); return; }
+  try {
+    await fetch(`${SB_URL}/rest/v1/tasks`, {
+      method: 'POST',
+      headers: SB_HEADERS,
+      body: JSON.stringify([{ id: deletedTask.id, data: deletedTask }])
+    });
+    // Hard-delete after 5s — all online devices will have synced the tombstone by then
+    setTimeout(() => sbDelete('tasks', deletedTask.id), 5000);
+  } catch(e) {
+    sbDelete('tasks', deletedTask.id);
+  }
 }
 
 // ── STATE ──
@@ -1734,39 +1751,39 @@ function checkTask(id, e) {
     return;
   }
 
-  // One-shot: animate then remove
+  // One-shot: animate then soft-delete
   const doneTask = tasks.find(t => t.id === id);
   const card = document.getElementById('card-' + id);
+  const doDelete = () => {
+    if (doneTask) appendLog({ task: doneTask, type: 'oneshot' });
+    // Soft-delete: mark as deleted so sync won't resurrect it
+    const deletedTask = { ...doneTask, deleted: true, deletedAt: new Date().toISOString() };
+    tasks = tasks.filter(t => t.id !== id);
+    save(tasks);
+    // Upsert tombstone so all devices know it's deleted, then hard-delete after delay
+    sbUpsertTombstone(deletedTask);
+    expandedIds.delete(id);
+    showToast(doneTask?.frog ? '🐸 Frosch gegessen!' : '✓ Aufgabe erledigt');
+    render();
+  };
   if (card) {
     card.style.transition = 'opacity 0.3s, transform 0.3s';
     card.style.opacity = '0';
     card.style.transform = 'translateX(30px)';
-    setTimeout(() => {
-      if (doneTask) appendLog({ task: doneTask, type: 'oneshot' });
-      tasks = tasks.filter(t => t.id !== id);
-      save(tasks);
-      sbDelete('tasks', id);
-      expandedIds.delete(id);
-      showToast(doneTask?.frog ? '🐸 Frosch gegessen!' : '✓ Aufgabe erledigt');
-      render();
-    }, 300);
+    setTimeout(doDelete, 300);
   } else {
-    if (doneTask) appendLog({ task: doneTask, type: 'oneshot' });
-    tasks = tasks.filter(t => t.id !== id);
-    save(tasks);
-    sbDelete('tasks', id);
-    expandedIds.delete(id);
-    showToast(doneTask?.frog ? '🐸 Frosch gegessen!' : '✓ Aufgabe erledigt');
+    doDelete();
   }
 }
 
 function deleteTask(id, e) {
   e.stopPropagation();
   if (!confirm('Aufgabe wirklich löschen?')) return;
-  const delId = id;
+  const delTask = tasks.find(t => t.id === id);
   tasks = tasks.filter(t => t.id !== id);
   save(tasks);
-  sbDelete('tasks', delId);
+  if (delTask) sbUpsertTombstone({ ...delTask, deleted: true, deletedAt: new Date().toISOString() });
+  else sbDelete('tasks', id);
   expandedIds.delete(id);
   render();
   showToast('🗑 Gelöscht');

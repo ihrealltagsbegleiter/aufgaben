@@ -1,7 +1,7 @@
 {
   "name": "Aufgaben · IAB",
   "short_name": "Aufgaben",
-  "description": "Aufgaben-Management für Ihre Alltagsbegleiter",
+  "description": "ADHS-gerechtes Aufgaben-Management für Ihre Alltagsbegleiter",
   "start_url": "/aufgaben/",
   "scope": "/aufgaben/",
   "id": "/aufgaben/",
@@ -11,5 +11,18 @@
   "icons": [
     { "src": "/aufgaben/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "/aufgaben/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "share_target": {
+    "action": "/aufgaben/index.html",
+    "method": "GET",
+    "params": { "title": "share-title", "text": "share-text", "url": "share-url" }
+  },
+  "shortcuts": [
+    {
+      "name": "Neue Aufgabe",
+      "short_name": "Neu",
+      "url": "/aufgaben/index.html?action=new",
+      "icons": [{ "src": "/aufgaben/icon-192.png", "sizes": "192x192" }]
+    }
   ]
 }

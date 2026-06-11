@@ -781,6 +781,17 @@ input[type=number] { max-width: 80px; text-align: center; }
 .st-add-input:focus { outline:none; border-color:var(--accent); }
 /* ── Confetti (Belohnung) ── */
 .cf-p { position:fixed; width:8px; height:8px; pointer-events:none; z-index:9999; border-radius:2px; will-change:transform,opacity; }
+/* ── Task-Timer (visueller Countdown) ── */
+.tt-float { position:fixed; bottom:72px; left:16px; background:var(--surface); border:1px solid var(--today); border-radius:10px; padding:8px 12px; display:flex; align-items:center; gap:10px; box-shadow:0 4px 20px rgba(88,166,255,.25); z-index:900; }
+.tt-float.overtime { border-color:var(--danger); box-shadow:0 4px 20px rgba(248,81,73,.3); }
+.tt-info { min-width:0; }
+.tt-title { font-size:0.7rem; color:var(--muted); max-width:130px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tt-time { font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums; color:var(--today); }
+.tt-float.overtime .tt-time { color:var(--danger); }
+#tt-ring-fg { transition:stroke-dashoffset 1s linear; }
+.tt-insight { background:var(--surface); border:1px solid var(--border2); border-left:3px solid var(--today); border-radius:var(--r); padding:10px 12px; margin-bottom:12px; font-size:0.85rem; color:var(--text); }
+/* ── WIP-Limit Heute ── */
+.wip-banner { background:var(--warn-bg); border:1px solid var(--warn); border-radius:var(--r); padding:10px 12px; margin-bottom:12px; font-size:0.85rem; color:var(--text); }
 </style>
 </head>
 <body>
@@ -1701,6 +1712,12 @@ function renderHorizonInto(tab) {
       else html += `<div class="section-header"><span class="section-label">Jetzt fällig</span><div class="section-line"></div></div>`;
       noTime.forEach(t => { html += taskCard(t, true); });
     }
+  } else if (tab === 'today' && sorted.length > 5) {
+    const top = sorted.slice(0, 5), rest = sorted.slice(5);
+    html += `<div class="wip-banner">🧠 <b>${sorted.length} Aufgaben für heute</b> – das überfordert jedes Gehirn. Fokus auf die obersten 5; der Rest wartet sicher unten.</div>`;
+    top.forEach(t => { html += taskCard(t); });
+    html += `<div class="section-header" style="cursor:pointer;" onclick="wipExpanded=!wipExpanded;renderList()"><span class="section-label">${wipExpanded ? '▾' : '▸'} ${rest.length} weitere ${wipExpanded ? 'ausblenden' : 'anzeigen'} (Overwhelm-Schutz)</span><div class="section-line"></div></div>`;
+    if (wipExpanded) rest.forEach(t => { html += taskCard(t); });
   } else {
     sorted.forEach(t => { html += taskCard(t); });
   }
@@ -1851,6 +1868,7 @@ function taskCard(task, isRecurring = false) {
     </div>
     <div class="task-actions" style="margin-top:8px;">
       ${waitBtn}
+      <button class="task-action-btn" style="color:var(--today);border-color:var(--today);" onclick="ttStart('${tid}',event)">⏱ Timer</button>
       <button class="task-action-btn" onclick="openEditModal('${tid}',event)">✏️ Bearbeiten</button>
       <button class="task-action-btn del" onclick="deleteTask('${tid}',event)">🗑 Löschen</button>
     </div>`;
@@ -1984,6 +2002,7 @@ function checkTask(id, e) {
   e.stopPropagation();
   const task = tasks.find(t => t.id === id);
   if (!task) return;
+  if (typeof ttState !== 'undefined' && ttState.taskId === id) ttStop(true);
 
   if (task.recurring && task.recurring !== 'none') {
     const done = loadDone();
@@ -2255,10 +2274,89 @@ setInterval(notifTick, 60000);
 setTimeout(notifTick, 4000);
 notifUpdateBtn();
 
+// ── TASK-TIMER (sichtbare Zeit gegen Zeitblindheit; ein Timer = ein Fokus) ──
+const TT_EFFORT_MIN = { s: 15, m: 60, l: 90 };
+const TT_CIRC = 119.4;
+let ttState = { taskId: null, title: '', totalSec: 0, startedAt: null, interval: null, alerted: false };
+let wipExpanded = false;
+
+function ttStart(taskId, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === taskId);
+  if (!t) return;
+  if (ttState.taskId) ttStop(true); // laufenden Timer sauber beenden, Zeit sichern
+  const mins = TT_EFFORT_MIN[t.effort] || 25;
+  ttState = { taskId, title: t.title, totalSec: mins * 60, startedAt: Date.now(), interval: null, alerted: false };
+  document.getElementById('tt-title').textContent = t.title;
+  document.getElementById('tt-float').style.display = 'flex';
+  document.getElementById('tt-float').classList.remove('overtime');
+  ttState.interval = setInterval(ttTick, 1000);
+  ttTick();
+  showToast(`⏱ ${mins} Min für: ${t.title}`);
+}
+
+function ttElapsedSec() {
+  return ttState.startedAt ? Math.floor((Date.now() - ttState.startedAt) / 1000) : 0;
+}
+
+function ttTick() {
+  if (!ttState.taskId) return;
+  const remain = ttState.totalSec - ttElapsedSec();
+  const timeEl = document.getElementById('tt-time');
+  const ringEl = document.getElementById('tt-ring-fg');
+  const floatEl = document.getElementById('tt-float');
+  const abs = Math.abs(remain);
+  const mm = String(Math.floor(abs / 60)).padStart(2, '0');
+  const ss = String(abs % 60).padStart(2, '0');
+  if (timeEl) timeEl.textContent = (remain < 0 ? '+' : '') + mm + ':' + ss;
+  if (ringEl) {
+    const frac = Math.max(0, remain) / ttState.totalSec;
+    ringEl.setAttribute('stroke-dashoffset', String(TT_CIRC * (1 - frac)));
+    ringEl.setAttribute('stroke', remain < 0 ? 'var(--danger)' : remain < ttState.totalSec * 0.2 ? 'var(--warn)' : 'var(--today)');
+  }
+  if (remain < 0 && floatEl) floatEl.classList.add('overtime');
+  if (remain <= 0 && !ttState.alerted) {
+    ttState.alerted = true;
+    if (notifPref() && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      notifShow('⏰ Zeit um: ' + ttState.title, 'Abschließen, oder bewusst verlängern – du entscheidest.');
+    }
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    showToast('⏰ Zeit um – abhaken oder bewusst weitermachen');
+  }
+}
+
+function ttRecordTime() {
+  const mins = Math.round(ttElapsedSec() / 60 * 10) / 10;
+  if (mins < 0.5) return 0;
+  const t = tasks.find(x => x.id === ttState.taskId);
+  if (t) {
+    t.timeSpent = Math.round(((t.timeSpent || 0) + mins) * 10) / 10;
+    save(tasks);
+  }
+  return mins;
+}
+
+function ttStop(silent) {
+  if (!ttState.taskId) return;
+  const mins = ttRecordTime();
+  clearInterval(ttState.interval);
+  ttState = { taskId: null, title: '', totalSec: 0, startedAt: null, interval: null, alerted: false };
+  const el = document.getElementById('tt-float');
+  if (el) { el.style.display = 'none'; el.classList.remove('overtime'); }
+  if (!silent) showToast(mins ? `⏹ ${mins} Min erfasst` : '⏹ Timer gestoppt');
+}
+
+function ttDone() {
+  const id = ttState.taskId;
+  if (!id) return;
+  checkTask(id, { stopPropagation() {} }); // ttStop läuft in checkTask, Zeit wird erfasst
+}
+
 // ── TABS ──
 function switchTab(tab) {
   currentTab = tab;
   currentProjectFilter = null;
+  wipExpanded = false;
   expandedIds.clear();
   document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tab);
@@ -3461,6 +3559,8 @@ function appendLog({ task, type }) {
     impact:      task.impact || null,
     eisen:       task.eisen || null,
     frog:        task.frog || false,
+    effort:      task.effort || null,
+    timeSpent:   task.timeSpent || null,
     type,
     completedAt: new Date().toISOString(),
   };
@@ -3950,7 +4050,16 @@ function renderLogTab() {
 
   const IMPACT_STARS = {5:'★★★★★',4:'★★★★☆',3:'★★★☆☆',2:'★★☆☆☆',1:'★☆☆☆☆'};
   const horizonLabels = {today:'Heute',week:'Woche',month:'Monat',later:'Irgendwann',maybe:'Vielleicht'};
-  let html2 = filterBar + statsHtml;
+  // ── Realitäts-Check: geschätzte vs. tatsächliche Zeit (Zeitblindheits-Training) ──
+  let insightHtml = '';
+  const measured = filtered.filter(e => e.effort && TT_EFFORT_MIN[e.effort] && e.timeSpent > 0);
+  if (measured.length >= 3) {
+    const avg = measured.reduce((s, e) => s + e.timeSpent / TT_EFFORT_MIN[e.effort], 0) / measured.length;
+    const pct = Math.round((avg - 1) * 100);
+    const verdict = pct > 30 ? 'ADHS-typisch – plane bewusst Puffer ein.' : pct < -20 ? 'Du überschätzt eher – trau dich an Größeres.' : 'Gute Kalibrierung – weiter so!';
+    insightHtml = `<div class="tt-insight">⏱ <b>Realitäts-Check:</b> Du brauchst im Schnitt <b>${pct >= 0 ? pct + '&nbsp;% länger' : Math.abs(pct) + '&nbsp;% kürzer'}</b> als geschätzt (${measured.length} gemessene Aufgaben). ${verdict}</div>`;
+  }
+  let html2 = filterBar + statsHtml + insightHtml;
 
   Object.entries(byDay).forEach(([day, entries]) => {
     const d = new Date(day + 'T12:00:00');
@@ -4480,6 +4589,21 @@ function authSignOut() {
     <div class="dw-float-label">Deep Work läuft</div>
   </div>
   <button class="dw-float-stop" onclick="event.stopPropagation();dwStop()">⏹</button>
+</div>
+
+<!-- Task-Timer: visueller Countdown gegen Zeitblindheit -->
+<div class="tt-float" id="tt-float" style="display:none">
+  <svg width="44" height="44" viewBox="0 0 44 44">
+    <circle cx="22" cy="22" r="19" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="4"/>
+    <circle id="tt-ring-fg" cx="22" cy="22" r="19" fill="none" stroke="var(--today)" stroke-width="4"
+      stroke-linecap="round" stroke-dasharray="119.4" stroke-dashoffset="0" transform="rotate(-90 22 22)"/>
+  </svg>
+  <div class="tt-info">
+    <div class="tt-title" id="tt-title"></div>
+    <div class="tt-time" id="tt-time">25:00</div>
+  </div>
+  <button class="btn-icon" onclick="ttDone()" title="Aufgabe jetzt abhaken" style="color:var(--accent);">✓</button>
+  <button class="btn-icon" onclick="ttStop()" title="Timer stoppen (Zeit wird erfasst)">⏹</button>
 </div>
 
 

@@ -43,7 +43,7 @@
   --font-mono: 'IBM Plex Mono','Courier New',monospace;
   --sh:        0 4px 16px rgba(0,0,0,.5),0 1px 4px rgba(0,0,0,.3);
   --sh-sm:     0 1px 4px rgba(0,0,0,.4);
-  --sidebar:   210px;
+  --sidebar:   236px;
   color-scheme: dark;
 }
 
@@ -112,27 +112,27 @@ body {
 
 .sidebar-section { padding: 16px 0 4px; }
 .sidebar-label {
-  font-size: 0.58rem; font-weight: 600; letter-spacing: 0.1em;
-  text-transform: uppercase; color: var(--muted-lt);
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
   padding: 0 14px 6px;
 }
 
 .nav-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 14px; margin: 1px 6px;
-  border-radius: 6px; cursor: pointer;
-  font-size: 0.82rem; color: var(--muted);
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin: 2px 6px;
+  border-radius: 7px; cursor: pointer;
+  font-size: 0.95rem; color: var(--muted);
   transition: background .12s, color .12s; user-select: none;
 }
 .nav-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
-.nav-item.active { background: rgba(57,255,20,.08); color: var(--accent); }
-.nav-item .ni-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: 0.85rem; }
+.nav-item.active { background: rgba(57,255,20,.08); color: var(--accent); font-weight: 600; }
+.nav-item .ni-icon { width: 22px; text-align: center; flex-shrink: 0; font-size: 1.05rem; }
 .nav-item .ni-label { flex: 1; }
 .nav-item .ni-badge {
-  font-size: 0.58rem; min-width: 15px; height: 15px;
+  font-size: 0.68rem; min-width: 18px; height: 18px;
   background: var(--surface2); border-radius: 20px;
   display: flex; align-items: center; justify-content: center;
-  padding: 0 4px; color: var(--muted);
+  padding: 0 5px; color: var(--muted);
 }
 .nav-item.active .ni-badge { background: var(--accent); color: #0d1117; }
 .nav-item.overdue-item { color: var(--danger); }
@@ -611,11 +611,12 @@ input[type=number] { max-width: 80px; text-align: center; }
   .sidebar { width: 100%; height: auto; max-height: 50dvh; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto; flex-wrap: nowrap; padding: 6px 8px; gap: 0; }
   .sidebar-section { padding: 0; display: flex; gap: 2px; }
   .sidebar-label { display: none; }
-  .sidebar-divider { display: none; }
-  .nav-item { padding: 8px 11px; white-space: nowrap; flex-direction: column; gap: 2px; min-width: 48px; font-size: 0.7rem; position: relative; }
-  .nav-item .ni-icon { margin-right: 0; font-size: 1rem; }
-  .nav-item .ni-label { display: block; flex: none; font-size: 0.56rem; letter-spacing: 0.02em; }
-  .nav-item .ni-badge { position: absolute; top: 0; right: 0; font-size: 0.55rem; padding: 0 4px; min-width: 14px; }
+  .sidebar-divider { display: block; width: 2px; height: 36px; align-self: center; margin: 0 6px; background: var(--border2); flex-shrink: 0; }
+  .nav-item { padding: 9px 12px 7px; white-space: nowrap; flex-direction: column; gap: 3px; min-width: 64px; min-height: 56px; justify-content: center; font-size: 0.7rem; position: relative; margin: 0 1px; }
+  .nav-item.active { border: 1px solid rgba(57,255,20,.35); }
+  .nav-item .ni-icon { margin-right: 0; font-size: 1.35rem; width: auto; }
+  .nav-item .ni-label { display: block; flex: none; font-size: 0.74rem; letter-spacing: 0.01em; font-weight: 500; }
+  .nav-item .ni-badge { position: absolute; top: 2px; right: 4px; font-size: 0.62rem; padding: 0 4px; min-width: 16px; height: 16px; }
   .topbar { height: 52px; padding: 0 14px; }
   .toast { right: 16px; left: 16px; bottom: 16px; }
 }
@@ -1712,12 +1713,22 @@ function renderHorizonInto(tab) {
       else html += `<div class="section-header"><span class="section-label">Jetzt fällig</span><div class="section-line"></div></div>`;
       noTime.forEach(t => { html += taskCard(t, true); });
     }
-  } else if (tab === 'today' && sorted.length > 5) {
-    const top = sorted.slice(0, 5), rest = sorted.slice(5);
-    html += `<div class="wip-banner">🧠 <b>${sorted.length} Aufgaben für heute</b> – das überfordert jedes Gehirn. Fokus auf die obersten 5; der Rest wartet sicher unten.</div>`;
-    top.forEach(t => { html += taskCard(t); });
-    html += `<div class="section-header" style="cursor:pointer;" onclick="wipExpanded=!wipExpanded;renderList()"><span class="section-label">${wipExpanded ? '▾' : '▸'} ${rest.length} weitere ${wipExpanded ? 'ausblenden' : 'anzeigen'} (Overwhelm-Schutz)</span><div class="section-line"></div></div>`;
-    if (wipExpanded) rest.forEach(t => { html += taskCard(t); });
+  } else if (tab === 'today') {
+    const oneShot  = sorted.filter(t => !t.recurring || t.recurring === 'none');
+    const routines = sorted.filter(t => t.recurring && t.recurring !== 'none');
+    if (oneShot.length > 5) {
+      const top = oneShot.slice(0, 5), rest = oneShot.slice(5);
+      html += `<div class="wip-banner">🧠 <b>${oneShot.length} Aufgaben für heute</b> – das überfordert jedes Gehirn. Fokus auf die obersten 5; der Rest wartet sicher unten.</div>`;
+      top.forEach(t => { html += taskCard(t); });
+      html += `<div class="section-header" style="cursor:pointer;" onclick="wipExpanded=!wipExpanded;renderList()"><span class="section-label">${wipExpanded ? '▾' : '▸'} ${rest.length} weitere ${wipExpanded ? 'ausblenden' : 'anzeigen'} (Overwhelm-Schutz)</span><div class="section-line"></div></div>`;
+      if (wipExpanded) rest.forEach(t => { html += taskCard(t); });
+    } else {
+      oneShot.forEach(t => { html += taskCard(t); });
+    }
+    if (routines.length) {
+      html += `<div class="section-header"><span class="section-label">↻ Heutige Routinen</span><div class="section-line"></div></div>`;
+      routines.forEach(t => { html += taskCard(t, true); });
+    }
   } else {
     sorted.forEach(t => { html += taskCard(t); });
   }

@@ -1606,6 +1606,12 @@ function updateBadges() {
 }
 
 function updateStats() {
+  // Statistik-Leiste auf Nutzerwunsch deaktiviert (06/2026).
+  // Tageszähler & Serie erscheinen weiterhin im Erledigt-Toast und im Protokoll.
+  const bar = document.getElementById('stats-bar');
+  if (bar) bar.style.display = 'none';
+}
+function updateStatsDisabled_() {
   const bar = document.getElementById('stats-bar');
   if (currentTab === 'inbox' || currentTab === 'today' || currentTab === 'waiting' || currentTab === 'matrix' || currentTab === 'impact' || currentTab === 'frogs' || currentTab === 'log') {
     bar.style.display = 'grid';

@@ -487,7 +487,7 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.5); curso
 .log-meta { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .log-day-header { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 0.92rem; padding: 12px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .log-day-count { font-size: 0.65rem; color: var(--muted); font-family: var(--font-mono); }
-.log-stats-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 14px; }
+.log-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px,1fr)); gap: 6px; margin-bottom: 14px; }
 
 /* Frog banner */
 .frog-banner { background: rgba(61,207,176,.06); border: 1px solid rgba(61,207,176,.2); border-radius: var(--r); padding: 12px 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
@@ -820,6 +820,13 @@ input[type=number] { max-width: 80px; text-align: center; }
 .ag-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .ag-due-label { font-size: 0.68rem; color: var(--danger); flex-shrink: 0; }
 .ag-empty { font-size: 0.8rem; color: var(--muted-lt); padding: 4px 10px 2px; }
+/* ── Ungeplante Arbeit & Protokoll-Löschung ── */
+.quick-alt-row { display: flex; gap: 8px; margin-top: 8px; }
+.quick-alt-btn { flex: 1; padding: 10px 6px; background: var(--surface2); color: var(--text); border: 1px solid var(--border2); border-radius: 8px; font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: border-color .15s, transform .1s; }
+.quick-alt-btn:active { transform: scale(0.97); }
+.quick-alt-btn:hover { border-color: var(--warn); }
+.log-del { opacity: 0.35; cursor: pointer; padding: 4px 7px; font-size: 0.85rem; flex-shrink: 0; align-self: center; }
+.log-del:hover { opacity: 1; color: var(--danger); }
 </style>
 </head>
 <body>
@@ -1747,7 +1754,12 @@ function renderHorizonInto(tab) {
       noTime.forEach(t => { html += taskCard(t, true); });
     }
   } else if (tab === 'today') {
-    const oneShot  = sorted.filter(t => !t.recurring || t.recurring === 'none');
+    const startedT = sorted.filter(t => t.started && (!t.recurring || t.recurring === 'none'));
+    const oneShot  = sorted.filter(t => (!t.recurring || t.recurring === 'none') && !t.started);
+    if (startedT.length) {
+      html += `<div class="section-header"><span class="section-label" style="color:var(--warn);">⏯ Angefangen – offene Schleifen (${startedT.length})</span><div class="section-line"></div></div>`;
+      startedT.forEach(t => { html += taskCard(t); });
+    }
     const routines = sorted.filter(t => t.recurring && t.recurring !== 'none');
     if (oneShot.length > 5) {
       const top = oneShot.slice(0, 5), rest = oneShot.slice(5);
@@ -1804,6 +1816,9 @@ function taskCard(task, isRecurring = false) {
   if (task.projectId) {
     const proj = projects.find(p => p.id === task.projectId);
     if (proj) tags += `<span class="tag tag-context tag-clickable" style="border-color:${proj.color};color:${proj.color};" onclick="qeOpenField('${task.id}','projectId',event)">📁 ${escHtml(proj.name)}</span>`;
+  }
+  if (task.started) {
+    tags += `<span class="tag" style="color:var(--warn);border-color:var(--warn);background:var(--warn-bg);">⏯ Angefangen</span>`;
   }
   if (task.frog) {
     const dreadEmoji = ['','😊','🙂','😐','😟','😰'][task.dread || 3];
@@ -1913,6 +1928,7 @@ function taskCard(task, isRecurring = false) {
     <div class="task-actions" style="margin-top:8px;">
       ${waitBtn}
       <button class="task-action-btn" style="color:var(--today);border-color:var(--today);" onclick="ttStart('${tid}',event)">⏱ Timer</button>
+      <button class="task-action-btn" onclick="markStarted('${tid}',event)">${task.started ? '⏸ Nicht mehr aktiv' : '⏯ Angefangen'}</button>
       <button class="task-action-btn" onclick="openEditModal('${tid}',event)">✏️ Bearbeiten</button>
       <button class="task-action-btn del" onclick="deleteTask('${tid}',event)">🗑 Löschen</button>
     </div>`;
@@ -3374,6 +3390,99 @@ function saveQuickTask() {
   showToast('⚡ → ' + where);
 }
 
+// ── UNSICHTBARE ARBEIT SICHTBAR MACHEN (ADHS-Kern: "war produktiv, fühlt sich nach nichts an") ──
+function qcReadAndReset(msgIfEmpty) {
+  const inp = document.getElementById('quick-input');
+  const raw = (inp ? inp.value : '').trim();
+  if (!raw || raw === '✓ Gespeichert') { showToast(msgIfEmpty); return null; }
+  return raw;
+}
+function qcConfirmInput() {
+  const inp = document.getElementById('quick-input');
+  if (!inp) return;
+  inp.value = '✓ Gespeichert'; inp.style.color = 'var(--accent2)';
+  const prev = document.getElementById('quick-preview');
+  if (prev) prev.innerHTML = '';
+  setTimeout(() => { inp.value = ''; inp.style.color = ''; inp.focus(); }, 600);
+}
+
+// "⚡ Schon erledigt": ungeplante, bereits getane Arbeit direkt ins Protokoll –
+// zählt für Tageszähler, Serie und Bilanz. Es entsteht KEINE offene Aufgabe.
+function logUnplanned() {
+  const raw = qcReadAndReset('⚠️ Erst kurz beschreiben, was du gemacht hast');
+  if (!raw) return;
+  const p = parseQuickInput(raw);
+  logEntries.push({
+    id: 'L' + Date.now(), taskId: null, title: p.title || raw,
+    horizon: null, projectId: p.projectId || null, impact: null, eisen: null,
+    frog: false, effort: null, timeSpent: null,
+    type: 'unplanned', completedAt: new Date().toISOString(),
+  });
+  saveLog(logEntries);
+  fireConfetti();
+  qcConfirmInput();
+  render();
+  const n = doneTodayCount(), strk = calcStreak();
+  showToast('⚡ Sichtbar gemacht – Nr. ' + n + ' heute!' + (strk > 1 ? ' 🔥' + strk : ''));
+}
+
+// "⏯ Angefangen": offene Schleife als Aufgabe mit Started-Markierung →
+// landet ganz oben in Heute, damit nichts unbemerkt offen bleibt.
+function saveStartedTask() {
+  const raw = qcReadAndReset('⚠️ Erst kurz beschreiben, was du angefangen hast');
+  if (!raw) return;
+  const p = parseQuickInput(raw);
+  tasks.push({
+    id: 'T' + Date.now(), title: p.title || raw, note: null,
+    horizon: 'today', due: p.due, due_time: p.due_time,
+    impact: p.impact != null ? p.impact : quickImpact, eisen: null,
+    context: p.context, effort: null, energy: null, projectId: p.projectId,
+    frog: p.frog, dread: p.frog ? 3 : null, recurring: 'none', recurDays: null,
+    waiting: false, started: true, startedAt: new Date().toISOString(), created: todayStr(),
+  });
+  save(tasks);
+  qcConfirmInput();
+  render();
+  showToast('⏯ Offene Schleife notiert – steht sichtbar oben in Heute');
+}
+
+function markStarted(id, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  t.started = !t.started;
+  t.startedAt = t.started ? new Date().toISOString() : null;
+  if (t.started && t.horizon !== 'today') t.horizon = 'today';
+  save(tasks);
+  render();
+  showToast(t.started ? '⏯ Als angefangen markiert – jetzt in Heute sichtbar' : '⏸ Markierung entfernt');
+}
+
+// ── PROTOKOLL LÖSCHEN (einzeln + komplett; nur online, sonst Wiederbelebung durch Sync) ──
+function logDeleteEntry(id, ev) {
+  if (ev) ev.stopPropagation();
+  if (!navigator.onLine) { showToast('⚠️ Löschen nur online möglich (sonst stellt der Sync es wieder her)'); return; }
+  logEntries = logEntries.filter(e => e.id !== id);
+  saveLog(logEntries);
+  sbDelete('log', id);
+  renderLogTab();
+  showToast('🗑 Eintrag gelöscht');
+}
+
+async function logClearAll() {
+  if (!navigator.onLine) { showToast('⚠️ Löschen nur online möglich (sonst stellt der Sync es wieder her)'); return; }
+  if (!logEntries.length) { showToast('Protokoll ist bereits leer'); return; }
+  if (!confirm('Gesamtes Protokoll löschen?\n\nAchtung: Tageszähler und 🔥-Serie basieren darauf und beginnen wieder bei 0.\nWiederkehrende Aufgaben und offene Aufgaben sind NICHT betroffen.')) return;
+  const ids = logEntries.map(e => e.id);
+  logEntries = [];
+  saveLog(logEntries);
+  renderLogTab();
+  showToast('🗑 Protokoll wird gelöscht…');
+  // Gezielte Einzel-Deletes statt Wildcard: löscht garantiert nur eigene, bekannte IDs
+  for (const id of ids) { await sbDelete('log', id); }
+  showToast('🗑 Protokoll gelöscht (' + ids.length + ' Einträge)');
+}
+
 // ── FOCUS MODE ──
 let focusMode = false;
 
@@ -4170,6 +4279,10 @@ function renderLogTab() {
     <div class="stat-box"><div class="stat-num">${total}</div><div class="stat-lbl">Erledigt</div></div>
     <div class="stat-box"><div class="stat-num">${frogs}</div><div class="stat-lbl">🐸 Frösche</div></div>
     <div class="stat-box"><div class="stat-num">${recur}</div><div class="stat-lbl">↻ Wiederkehrend</div></div>
+    <div class="stat-box"><div class="stat-num" style="color:var(--warn);">${filtered.filter(e => e.type === 'unplanned').length}</div><div class="stat-lbl">⚡ Ungeplant</div></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+    <button class="qe-btn" style="color:var(--danger);border-color:var(--danger);" onclick="logClearAll()">🗑 Protokoll löschen</button>
   </div>`;
 
   const byDay = {};
@@ -4200,7 +4313,7 @@ function renderLogTab() {
       const t = new Date(e.completedAt);
       const timeStr = t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
       const proj = e.projectId ? projects.find(p => p.id === e.projectId) : null;
-      const icon = e.frog ? '🐸' : e.type === 'recurring' ? '↻' : '✓';
+      const icon = e.type === 'unplanned' ? '⚡' : e.frog ? '🐸' : e.type === 'recurring' ? '↻' : '✓';
       let metaTags = '';
       if (e.horizon) metaTags += `<span class="tag tag-horizon-${e.horizon}" style="font-size:0.62rem;padding:1px 6px;">${horizonLabels[e.horizon]||''}</span>`;
       if (e.impact)  metaTags += `<span class="tag tag-impact-${parseInt(e.impact)||3}" style="font-size:0.62rem;padding:1px 5px;">${IMPACT_STARS[parseInt(e.impact)]||''}</span>`;
@@ -4209,6 +4322,7 @@ function renderLogTab() {
         <div class="log-date-col"><div>${day.split('-').reverse().join('.')}</div><div class="log-time">${timeStr}</div></div>
         <div class="log-icon">${icon}</div>
         <div class="log-body"><div class="log-title">${escHtml(e.title)}</div>${metaTags?`<div class="log-meta">${metaTags}</div>`:''}</div>
+        <span class="log-del" onclick="logDeleteEntry('${e.id}',event)" title="Eintrag löschen">✕</span>
       </div>`;
     });
   });
@@ -4705,6 +4819,10 @@ function authSignOut() {
     </div>
     <div class="quick-preview" id="quick-preview"></div>
     <button class="quick-save-btn" id="quick-save-btn" onclick="saveQuickTask()">✓ Speichern</button>
+    <div class="quick-alt-row">
+      <button class="quick-alt-btn" id="quick-done-btn" onclick="logUnplanned()" title="War nicht geplant, ist aber erledigt – sichtbar machen">⚡ Schon erledigt</button>
+      <button class="quick-alt-btn" id="quick-started-btn" onclick="saveStartedTask()" title="Angefangen, aber noch offen – als offene Schleife notieren">⏯ Angefangen</button>
+    </div>
     <div class="quick-hint">
       <span><kbd>Enter</kbd> speichern &nbsp;·&nbsp; <kbd>Esc</kbd> schließen</span>
       <span>@kontext · +projekt · ★★★ · !3 · morgen · 14 uhr · 🐸</span>

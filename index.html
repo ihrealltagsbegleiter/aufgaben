@@ -800,6 +800,10 @@ input[type=number] { max-width: 80px; text-align: center; }
 .tt-insight { background:var(--surface); border:1px solid var(--border2); border-left:3px solid var(--today); border-radius:var(--r); padding:10px 12px; margin-bottom:12px; font-size:0.85rem; color:var(--text); }
 /* ── WIP-Limit Heute ── */
 .wip-banner { background:var(--warn-bg); border:1px solid var(--warn); border-radius:var(--r); padding:10px 12px; margin-bottom:12px; font-size:0.85rem; color:var(--text); }
+/* ── Quick-Capture Speichern-Button (Pflicht für Mobile: Enter-Taste unzuverlässig bei Android-IME) ── */
+.quick-save-btn { margin-top: 10px; width: 100%; padding: 12px; background: var(--accent); color: #0d1117; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: transform .1s, background .15s; }
+.quick-save-btn:active { transform: scale(0.97); }
+.quick-save-btn:hover { background: var(--accent-dk); }
 </style>
 </head>
 <body>
@@ -3290,8 +3294,15 @@ function attachQuickListener() {
   if (quickListenerAttached) return;
   const inp = document.getElementById('quick-input');
   if (!inp) return;
+  // Android-IME-sicher: manche Tastaturen senden bei Enter key="Unidentified"/keyCode 229.
+  // Daher: keydown UND keyup prüfen, jeweils key ODER keyCode. Doppel-Speichern
+  // verhindert der Guard in saveQuickTask ('✓ Gespeichert' / leeres Feld).
+  const isEnter = e => e.key === 'Enter' || e.keyCode === 13 || e.which === 13;
   inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); saveQuickTask(); }
+    if (isEnter(e)) { e.preventDefault(); saveQuickTask(); }
+  });
+  inp.addEventListener('keyup', e => {
+    if (isEnter(e)) { e.preventDefault(); saveQuickTask(); }
   });
   inp.addEventListener('input', renderQuickPreview);
   quickListenerAttached = true;
@@ -4681,6 +4692,7 @@ function authSignOut() {
       placeholder="Aufgabe beschreiben…"
       autocomplete="off"
       autocorrect="off"
+      enterkeyhint="done"
     />
     <div class="quick-impact-row" style="align-items:center;gap:4px;">
       <span style="font-family:monospace;font-size:0.65rem;color:var(--muted);">Impact:</span>
@@ -4694,6 +4706,7 @@ function authSignOut() {
       <span class="star-label" id="quick-impact-label" style="font-size:0.65rem;">Mittel</span>
     </div>
     <div class="quick-preview" id="quick-preview"></div>
+    <button class="quick-save-btn" id="quick-save-btn" onclick="saveQuickTask()">✓ Speichern</button>
     <div class="quick-hint">
       <span><kbd>Enter</kbd> speichern &nbsp;·&nbsp; <kbd>Esc</kbd> schließen</span>
       <span>@kontext · +projekt · ★★★ · !3 · morgen · 14 uhr · 🐸</span>

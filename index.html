@@ -877,6 +877,24 @@ input[type=number] { max-width: 80px; text-align: center; }
     </div>
 
     <div class="field">
+      <label>Aufwand <span style="color:var(--muted);font-size:0.68rem;font-weight:300;">– geschätzte Zeit</span></label>
+      <div class="pill-group" id="effort-pills">
+        <div class="pill" data-val="s">◔ ≤15 Min</div>
+        <div class="pill" data-val="m">◑ ~1 Std</div>
+        <div class="pill" data-val="l">● >1 Std</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Energie <span style="color:var(--muted);font-size:0.68rem;font-weight:300;">– nötiges Energielevel</span></label>
+      <div class="pill-group" id="energy-pills">
+        <div class="pill" data-val="low">🔅 Wenig</div>
+        <div class="pill" data-val="mid">🔆 Mittel</div>
+        <div class="pill" data-val="high">☀️ Viel</div>
+      </div>
+    </div>
+
+    <div class="field">
       <label>🐸 Frosch <span style="color:var(--muted);font-size:0.68rem;font-weight:300;">– kostet besondere Überwindung</span></label>
       <div style="display:flex;align-items:center;gap:14px;margin-top:2px;">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -1048,6 +1066,17 @@ const PROJECT_KEY = 'iab_projects_v1';
 const LOG_KEY     = 'iab_log_v1';
 
 const IMPACT_LABELS = ['','Minimal','Niedrig','Mittel','Hoch','Maximal'];
+// Aufwand (Zeitschätzung) & Energie – GTD-Auswahlkriterien "verfügbare Zeit + Energie"
+const EFFORT_META = {
+  s: { label: '◔ ≤15 Min', tag: '◔ ≤15m' },
+  m: { label: '◑ ~1 Std',  tag: '◑ ~1h'  },
+  l: { label: '● >1 Std',  tag: '● >1h'  },
+};
+const ENERGY_META = {
+  low:  { label: '🔅 Wenig',  tag: '🔅 wenig'  },
+  mid:  { label: '🔆 Mittel', tag: '🔆 mittel' },
+  high: { label: '☀️ Viel',   tag: '☀️ viel'   },
+};
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORE_KEY) || '[]'); } catch { return []; }
@@ -1230,6 +1259,8 @@ let fHorizon = 'today';
 let fImpact  = 3;    // 1–5 stars
 let fEisen   = null; // 1–4 Eisenhower quadrant, null = not set
 let fContext = null;
+let fEffort  = null; // s|m|l, null = nicht gesetzt
+let fEnergy  = null; // low|mid|high, null = nicht gesetzt
 let fRecur   = 'none';
 
 // ── DATE UTILS ──
@@ -1558,6 +1589,12 @@ function taskCard(task, isRecurring = false) {
   }
   if (task.context) {
     tags += `<span class="tag tag-context tag-clickable" onclick="qeOpenField('${task.id}','context',event)">${contextLabels[task.context]||task.context}</span>`;
+  }
+  if (task.effort && EFFORT_META[task.effort]) {
+    tags += `<span class="tag" style="color:var(--muted);" title="Aufwand">${EFFORT_META[task.effort].tag}</span>`;
+  }
+  if (task.energy && ENERGY_META[task.energy]) {
+    tags += `<span class="tag" style="color:var(--muted);" title="Energie">${ENERGY_META[task.energy].tag}</span>`;
   }
   if (task.projectId) {
     const proj = projects.find(p => p.id === task.projectId);
@@ -1897,6 +1934,8 @@ function openAddModal() {
   fEisen = null;
   document.querySelectorAll('#eisen-pills .eisen-pill').forEach(b => b.className = 'eisen-pill');
   setContextPill(null);
+  setEffortDirect(null);
+  setEnergyDirect(null);
   setRecurPill('none');
   initFrogField(false, 3);
   openModal();
@@ -1922,6 +1961,8 @@ function openEditModal(id, e) {
     if (fEisen && parseInt(b.dataset.val) === fEisen) b.classList.add('sel-' + fEisen);
   });
   setContextPill(task.context || null);
+  setEffortDirect(task.effort || null);
+  setEnergyDirect(task.energy || null);
   initFrogField(task.frog || false, task.dread || 3);
   setRecurPill(task.recurring || 'none');
   if (task.recurring === 'custom') {
@@ -1959,6 +2000,8 @@ function saveTask() {
       task.impact   = fImpact;
       task.eisen    = fEisen;
       task.context  = fContext;
+      task.effort   = fEffort;
+      task.energy   = fEnergy;
       task.frog     = document.getElementById('f-frog').checked;
       task.dread    = task.frog ? fDread : null;
       task.projectId = document.getElementById('f-project').value || null;
@@ -1977,6 +2020,8 @@ function saveTask() {
       impact:    fImpact,
       eisen:     fEisen,
       context:   fContext,
+      effort:    fEffort,
+      energy:    fEnergy,
       frog:      document.getElementById('f-frog').checked,
       dread:     document.getElementById('f-frog').checked ? fDread : null,
       projectId: document.getElementById('f-project').value || null,
@@ -2044,6 +2089,18 @@ function setContextPill(val) {
     if (p.dataset.val === val) p.classList.remove('red','green','blue');
   });
 }
+function applyEffortUI() {
+  document.querySelectorAll('#effort-pills .pill').forEach(p =>
+    p.classList.toggle('selected', p.dataset.val === fEffort));
+}
+function applyEnergyUI() {
+  document.querySelectorAll('#energy-pills .pill').forEach(p =>
+    p.classList.toggle('selected', p.dataset.val === fEnergy));
+}
+function setEffortPill(val) { fEffort = (fEffort === val) ? null : val; applyEffortUI(); } // Klick = Toggle
+function setEnergyPill(val) { fEnergy = (fEnergy === val) ? null : val; applyEnergyUI(); }
+function setEffortDirect(val) { fEffort = val || null; applyEffortUI(); } // Laden = Direkt
+function setEnergyDirect(val) { fEnergy = val || null; applyEnergyUI(); }
 function setRecurPill(val) {
   fRecur = val;
   document.querySelectorAll('#recur-pills .pill').forEach(p => {
@@ -2057,6 +2114,8 @@ function setRecurPill(val) {
 pillSetup('horizon-pills', 'fHorizon', setHorizonPill);
 // impact uses star buttons directly; eisen uses onclick
 pillSetup('context-pills', 'fContext', setContextPill);
+pillSetup('effort-pills',  'fEffort',  setEffortPill);
+pillSetup('energy-pills',  'fEnergy',  setEnergyPill);
 pillSetup('recur-pills',   'fRecur',   setRecurPill);
 
 // ── REVIEW MODAL ──
@@ -2551,7 +2610,7 @@ function toggleFocusMode() {
 
 
 // ── FILTER ──
-let activeFilters = { impact: [], eisen: [], context: [], type: [] };
+let activeFilters = { impact: [], eisen: [], context: [], type: [], effort: [], energy: [] };
 let filterProjectId = null;
 
 function toggleFilterPanel(e) {
@@ -2604,7 +2663,7 @@ function toggleProjectFilter(id) {
 }
 
 function updateFilterUI() {
-  ['impact','eisen','context','type'].forEach(cat => {
+  ['impact','eisen','context','type','effort','energy'].forEach(cat => {
     document.querySelectorAll(`#fp-${cat} .filter-pill`).forEach(p => {
       p.classList.toggle('active', activeFilters[cat].includes(p.dataset.val));
     });
@@ -2617,7 +2676,7 @@ function updateFilterUI() {
 }
 
 function clearAllFilters() {
-  activeFilters = { impact: [], eisen: [], context: [], type: [] };
+  activeFilters = { impact: [], eisen: [], context: [], type: [], effort: [], energy: [] };
   filterProjectId = null;
   updateFilterUI();
   document.getElementById('filter-panel')?.classList.remove('open');
@@ -2630,6 +2689,8 @@ function applyFilters(tasks) {
     if (activeFilters.impact.length > 0 && !activeFilters.impact.includes(String(parseInt(t.impact)||3))) return false;
     if (activeFilters.eisen.length > 0  && !activeFilters.eisen.includes(String(t.eisen||0)))            return false;
     if (activeFilters.context.length > 0 && !activeFilters.context.includes(t.context||''))              return false;
+    if (activeFilters.effort.length > 0  && !activeFilters.effort.includes(t.effort||''))                return false;
+    if (activeFilters.energy.length > 0  && !activeFilters.energy.includes(t.energy||''))                return false;
     if (activeFilters.type.includes('frog')      && !t.frog)                                             return false;
     if (activeFilters.type.includes('recurring') && (!t.recurring || t.recurring === 'none'))            return false;
     if (activeFilters.type.includes('due')       && !t.due)                                              return false;
@@ -3769,6 +3830,22 @@ function authSignOut() {
       <span class="filter-pill" data-val="talk" onclick="toggleFilter('context','talk')">💬 Absprache</span>
       <span class="filter-pill" data-val="lexware" onclick="toggleFilter('context','lexware')">💸 Lexware</span>
       <span class="filter-pill" data-val="people"  onclick="toggleFilter('context','people')">😬 people pleasing</span>
+    </div>
+  </div>
+  <div class="filter-section">
+    <div class="filter-section-label">Aufwand</div>
+    <div class="filter-pills" id="fp-effort">
+      <span class="filter-pill" data-val="s" onclick="toggleFilter('effort','s')">◔ ≤15 Min</span>
+      <span class="filter-pill" data-val="m" onclick="toggleFilter('effort','m')">◑ ~1 Std</span>
+      <span class="filter-pill" data-val="l" onclick="toggleFilter('effort','l')">● >1 Std</span>
+    </div>
+  </div>
+  <div class="filter-section">
+    <div class="filter-section-label">Energie</div>
+    <div class="filter-pills" id="fp-energy">
+      <span class="filter-pill" data-val="low"  onclick="toggleFilter('energy','low')">🔅 Wenig</span>
+      <span class="filter-pill" data-val="mid"  onclick="toggleFilter('energy','mid')">🔆 Mittel</span>
+      <span class="filter-pill" data-val="high" onclick="toggleFilter('energy','high')">☀️ Viel</span>
     </div>
   </div>
   <div class="filter-section">

@@ -804,6 +804,22 @@ input[type=number] { max-width: 80px; text-align: center; }
 .quick-save-btn { margin-top: 10px; width: 100%; padding: 12px; background: var(--accent); color: #0d1117; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: transform .1s, background .15s; }
 .quick-save-btn:active { transform: scale(0.97); }
 .quick-save-btn:hover { background: var(--accent-dk); }
+/* ── Agenda (Kalender-Tab) ── */
+.ag-wrap { padding-bottom: 40px; }
+.ag-head { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.ag-day-head { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 18px 0 7px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.ag-day-head.ag-today { color: var(--accent); border-color: rgba(57,255,20,.35); }
+.ag-day-head.ag-overdue { color: var(--danger); border-color: rgba(248,81,73,.4); }
+.ag-count { margin-left: auto; font-size: 0.66rem; color: var(--muted-lt); text-transform: none; letter-spacing: 0; }
+.ag-row { display: flex; align-items: center; gap: 9px; padding: 11px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 5px; cursor: pointer; font-size: 0.9rem; transition: background .12s; }
+.ag-row:hover, .ag-row:active { background: var(--surface2); }
+.ag-row-overdue { border-color: rgba(248,81,73,.4); }
+.ag-time { font-variant-numeric: tabular-nums; font-size: 0.78rem; color: var(--today); min-width: 42px; font-weight: 600; flex-shrink: 0; }
+.ag-time-empty { color: var(--muted-lt); }
+.ag-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.ag-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.ag-due-label { font-size: 0.68rem; color: var(--danger); flex-shrink: 0; }
+.ag-empty { font-size: 0.8rem; color: var(--muted-lt); padding: 4px 10px 2px; }
 </style>
 </head>
 <body>
@@ -3774,100 +3790,76 @@ function calBuildEventMap(year, month) {
   return map;
 }
 
+// ── AGENDA-ANSICHT: chronologische 14-Tage-Liste statt Monatsraster ──
+// Begründung: Monatsraster ist mobil unlesbar (Punkte statt Inhalt); ADHS-gerecht
+// ist eine scrollbare Zeitachse mit konkreten Aufgaben (Referenz: Tiimo, Sunsama).
+function agendaRecurOnDay(task, day) {
+  const next = calNextRecurDate(task); next.setHours(0,0,0,0);
+  const d0 = new Date(day); d0.setHours(0,0,0,0);
+  if (d0 < next) return false;
+  let iv = 1;
+  if (task.recurring === 'weekly') iv = 7;
+  else if (task.recurring === 'monthly') iv = 30;
+  else if (task.recurring === 'custom') iv = task.recurDays || 7;
+  const diff = Math.round((d0 - next) / 86400000);
+  return diff % iv === 0;
+}
+
+function agendaBuildDays(numDays) {
+  const days = [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(today); d.setDate(today.getDate() + i);
+    const key = calDayKey(d);
+    const items = [];
+    tasks.forEach(t => {
+      if (t.waiting) return;
+      if (!t.recurring || t.recurring === 'none') {
+        if (t.due === key) items.push({ id: t.id, title: t.title, time: t.due_time || null, type: 'task', frog: t.frog, projId: t.projectId });
+      } else if (agendaRecurOnDay(t, d)) {
+        items.push({ id: t.id, title: t.title, time: t.due_time || null, type: 'recurring', projId: t.projectId });
+      }
+    });
+    items.sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
+    days.push({ date: d, key, items });
+  }
+  return days;
+}
+
+function agRow(it) {
+  const proj = it.projId ? projects.find(p => p.id === it.projId) : null;
+  const dot = proj ? `<span class="ag-dot" style="background:${proj.color}"></span>` : '';
+  const time = it.time ? `<span class="ag-time">${it.time}</span>` : `<span class="ag-time ag-time-empty">–</span>`;
+  const icon = it.type === 'recurring' ? '↻ ' : it.type === 'overdue' ? '' : it.frog ? '🐸 ' : '';
+  const extra = it.dueLabel ? ` <span class="ag-due-label">seit ${it.dueLabel}</span>` : '';
+  return `<div class="ag-row${it.type === 'overdue' ? ' ag-row-overdue' : ''}" onclick="goToTask('${it.id}')">${time}${dot}<span class="ag-title">${icon}${escHtml(it.title)}</span>${extra}</div>`;
+}
+
 function renderCalendarTab() {
   const list = document.getElementById('task-list');
   document.getElementById('stats-bar').style.display = 'none';
+  const days = agendaBuildDays(14);
+  const overdue = tasks
+    .filter(t => !t.waiting && (!t.recurring || t.recurring === 'none') && diffDays(t.due) !== null && diffDays(t.due) < 0)
+    .sort((a, b) => (a.due || '').localeCompare(b.due || ''));
 
-  const { year, month, selectedDate } = calState;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const todayKey = calDayKey(today);
-
-  const first = new Date(year, month, 1);
-  const startDow = first.getDay() === 0 ? 6 : first.getDay() - 1;
-  const gridStart = new Date(first); gridStart.setDate(1 - startDow);
-
-  const monthName = first.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
-  const eventMap = calBuildEventMap(year, month);
-
-  // Build 42 cells
-  let cellsHtml = '';
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
-    const key = calDayKey(d);
-    const isToday = key === todayKey;
-    const isOther = d.getMonth() !== month;
-    const isSelected = key === selectedDate;
-    const events = eventMap[key] || [];
-
-    const MAX_DOTS = 3;
-    const dotsHtml = events.slice(0, MAX_DOTS).map(ev => {
-      const cls = ev.type === 'recurring' ? 'recurring' : ev.type === 'overdue' ? 'overdue-dot' : '';
-      const icon = ev.frog ? '🐸 ' : ev.type === 'recurring' ? '↻ ' : '';
-      return `<div class="cal-dot ${cls}">${icon}${escHtml(ev.title)}</div>`;
-    }).join('');
-    const moreHtml = events.length > MAX_DOTS
-      ? `<div class="cal-dot more">+${events.length - MAX_DOTS} weitere</div>` : '';
-
-    const selStyle = isSelected ? 'outline:2px solid var(--accent);outline-offset:-2px;' : '';
-    cellsHtml += `<div class="cal-cell${isToday?' today':''}${isOther?' other-month':''}" style="${selStyle}" onclick="calSelectDay('${key}')">
-      <div class="cal-day-num">${d.getDate()}</div>
-      <div class="cal-dots">${dotsHtml}${moreHtml}</div>
-    </div>`;
+  let html = '';
+  if (overdue.length) {
+    html += `<div class="ag-day-head ag-overdue">🔴 Überfällig<span class="ag-count">${overdue.length}</span></div>`;
+    overdue.forEach(t => {
+      html += agRow({ id: t.id, title: t.title, time: null, type: 'overdue', frog: t.frog, projId: t.projectId, dueLabel: (t.due || '').split('-').reverse().join('.') });
+    });
   }
-
-  // Detail panel
-  let detailHtml = '';
-  if (selectedDate && eventMap[selectedDate]) {
-    const d = new Date(selectedDate + 'T00:00:00');
-    const label = d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long' });
-    const items = eventMap[selectedDate].map(ev => {
-      const icon = ev.frog ? '🐸' : ev.type === 'recurring' ? '↻' : '📌';
-      const meta = ev.type === 'recurring' ? ev.recurLabel : (ev.proj ? `📁 ${escHtml(ev.proj.name)}` : '');
-      return `<div class="cal-detail-item">
-        <div class="cal-detail-icon">${icon}</div>
-        <div>
-          <div class="cal-detail-text">${escHtml(ev.title)}</div>
-          ${meta ? `<div class="cal-detail-meta">${escHtml(meta)}</div>` : ''}
-        </div>
-      </div>`;
-    }).join('');
-    detailHtml = `<div class="cal-detail open"><div class="cal-detail-inner">
-      <div class="cal-detail-title">${label}</div>${items}
-    </div></div>`;
-  } else {
-    detailHtml = `<div class="cal-detail"></div>`;
-  }
-
-  list.innerHTML = `<div class="cal-wrap">
-    <div class="cal-header">
-      <button class="cal-nav-btn" onclick="calNav(-1)">‹</button>
-      <div class="cal-title">${monthName}</div>
-      <button class="cal-nav-btn" onclick="calNav(1)">›</button>
-    </div>
-    <div class="cal-grid-head">
-      ${['Mo','Di','Mi','Do','Fr','Sa','So'].map(d=>`<div class="cal-dow">${d}</div>`).join('')}
-    </div>
-    <div class="cal-grid">${cellsHtml}</div>
-    <div class="cal-legend">
-      <div class="cal-leg-item"><div class="cal-leg-dot" style="background:rgba(200,169,110,0.4)"></div>Aufgabe</div>
-      <div class="cal-leg-item"><div class="cal-leg-dot" style="background:rgba(90,158,122,0.4)"></div>Wiederkehrend</div>
-      <div class="cal-leg-item"><div class="cal-leg-dot" style="background:rgba(212,99,90,0.4)"></div>Überfällig</div>
-    </div>
-    ${detailHtml}
-  </div>`;
-}
-
-function calNav(dir) {
-  calState.month += dir;
-  if (calState.month < 0) { calState.month = 11; calState.year--; }
-  if (calState.month > 11) { calState.month = 0; calState.year++; }
-  calState.selectedDate = null;
-  renderCalendarTab();
-}
-
-function calSelectDay(key) {
-  calState.selectedDate = calState.selectedDate === key ? null : key;
-  renderCalendarTab();
+  days.forEach((day, i) => {
+    if (!day.items.length && i > 1) return; // leere Tage ausblenden – Heute & Morgen immer zeigen
+    const lbl = i === 0 ? 'Heute' : i === 1 ? 'Morgen'
+      : day.date.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+    const datum = i < 2 ? ' · ' + day.date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : '';
+    html += `<div class="ag-day-head${i === 0 ? ' ag-today' : ''}">${lbl}${datum}<span class="ag-count">${day.items.length || 'frei'}</span></div>`;
+    if (!day.items.length) { html += `<div class="ag-empty">Nichts geplant – Luft für Spontanes ✨</div>`; return; }
+    day.items.forEach(it => { html += agRow(it); });
+  });
+  list.innerHTML = `<div class="ag-wrap"><div class="ag-head">📅 Nächste 14 Tage</div>${html}</div>`;
 }
 /* ──────────── END KALENDER ──────────── */
 

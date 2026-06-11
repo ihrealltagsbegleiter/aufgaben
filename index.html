@@ -494,6 +494,14 @@ input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.5); curso
 .quick-input { width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--border); color: var(--text); font-family: 'Inter', sans-serif; font-size: 0.95rem; padding: 4px 0 8px; outline: none; }
 .quick-input:focus { border-bottom-color: var(--accent); }
 .quick-input::placeholder { color: var(--muted); }
+.quick-preview { margin-top: 8px; min-height: 0; }
+.quick-preview .qc-prev-title { font-size: 0.9rem; color: var(--text); margin-bottom: 5px; }
+.quick-preview .qc-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.quick-preview .qc-chip {
+  font-size: 0.66rem; padding: 2px 8px; border-radius: 20px;
+  border: 1px solid var(--border); color: var(--muted);
+  background: var(--surface); white-space: nowrap;
+}
 .quick-hint { font-size: 0.62rem; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; }
 .quick-hint kbd { background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 0.6rem; color: var(--text); }
 
@@ -2529,6 +2537,8 @@ function openQuick() {
   document.getElementById('quick-overlay').classList.add('open');
   document.getElementById('fab').classList.add('open');
   document.getElementById('quick-input').value = '';
+  const _qpv = document.getElementById('quick-preview');
+  if (_qpv) _qpv.innerHTML = '';
   setQuickImpact(3);
   attachQuickListener();
   setTimeout(() => document.getElementById('quick-input').focus(), 180);
@@ -2553,21 +2563,191 @@ function setQuickImpact(val) {
   if (lbl) lbl.textContent = IMPACT_LABELS[val] || '';
 }
 
+// ── QUICK-CAPTURE PARSER (natürliche Sprache → Felder) ──
+const QC_CTX_SYN = {
+  telefon:'phone', telefonieren:'phone', anrufen:'phone', tel:'phone', call:'phone',
+  pc:'pc', computer:'pc', rechner:'pc',
+  unterwegs:'mobile', mobil:'mobile',
+  team:'team',
+  recherche:'research', research:'research',
+  unterlagen:'docs', dokumente:'docs', docs:'docs',
+  it:'it', entwicklung:'it', code:'it', coding:'it',
+  fokus:'focus', focus:'focus', deepwork:'focus',
+  absprache:'talk', talk:'talk', besprechen:'talk',
+  lexware:'lexware',
+  schnell:'quick', quick:'quick',
+  people:'people', peoplepleasing:'people',
+};
+const QC_WEEKDAYS = {
+  sonntag:0, montag:1, dienstag:2, mittwoch:3, donnerstag:4, freitag:5, samstag:6, sonnabend:6,
+};
+function qcDateStr(offsetDays) {
+  const d = new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate() + offsetDays);
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + da;
+}
+function qcPad(s){ return String(s).padStart(2,'0'); }
+
+function parseQuickInput(text) {
+  let s = ' ' + (text || '') + ' ';
+  const res = { title:'', due:null, due_time:null, horizon:null, context:null, impact:null, projectId:null, frog:false };
+
+  // 1) Frosch
+  if (/🐸/.test(s) || /(^|\s)!frosch(\s|$)/i.test(s)) { res.frog = true; s = s.replace(/🐸/g,' ').replace(/(^|\s)!frosch(\s|$)/ig,' '); }
+
+  // 2) Impact: ★-Wiederholung ODER !1..!5
+  const stars = (s.match(/★/g) || []).length;
+  if (stars > 0) { res.impact = Math.min(stars, 5); s = s.replace(/★/g,' '); }
+  const impM = s.match(/(^|\s)!([1-5])(\s|$)/);
+  if (impM) { res.impact = parseInt(impM[2],10); s = s.replace(impM[0],' '); }
+
+  // 3) Kontext @wort
+  const ctxM = s.match(/(^|\s)@([a-zäöüß]+)/i);
+  if (ctxM) {
+    const key = QC_CTX_SYN[ctxM[2].toLowerCase()];
+    if (key) res.context = key;
+    s = s.replace(ctxM[0], ctxM[1]); // Token entfernen, führendes Leerzeichen erhalten
+  }
+
+  // 4) Projekt +name (gegen bestehende Projekte matchen)
+  const projM = s.match(/(^|\s)\+([a-zäöüß0-9][\wäöüß-]*)/i);
+  if (projM && typeof projects !== 'undefined') {
+    const needle = projM[2].toLowerCase();
+    const proj = projects.find(p => p.name && p.name.toLowerCase().startsWith(needle));
+    if (proj) { res.projectId = proj.id; s = s.replace(projM[0], projM[1]); }
+  }
+
+  // 5) Uhrzeit: "um HH(:MM)", "HH(:MM) uhr", "HH:MM"
+  let timeM = s.match(/(^|\s)um\s+(\d{1,2})(?::(\d{2}))?(\s|$)/i)
+           || s.match(/(^|\s)(\d{1,2})(?::(\d{2}))?\s*uhr(\s|$)/i)
+           || s.match(/(^|\s)(\d{1,2}):(\d{2})(\s|$)/);
+  if (timeM) {
+    const h = parseInt(timeM[2],10), mi = timeM[3] ? parseInt(timeM[3],10) : 0;
+    if (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) {
+      res.due_time = qcPad(h) + ':' + qcPad(mi);
+      s = s.replace(timeM[0], (timeM[1]||' '));
+    }
+  }
+
+  // 6) Datum
+  // 6a) DD.MM.(YYYY)
+  const dM = s.match(/(^|\s)(\d{1,2})\.(\d{1,2})\.(\d{2,4})?(\s|$)/);
+  if (dM) {
+    const day = parseInt(dM[2],10), mon = parseInt(dM[3],10);
+    let yr = dM[4] ? parseInt(dM[4],10) : new Date().getFullYear();
+    if (yr < 100) yr += 2000;
+    if (day>=1 && day<=31 && mon>=1 && mon<=12) {
+      res.due = yr + '-' + qcPad(mon) + '-' + qcPad(day);
+      s = s.replace(dM[0], (dM[1]||' '));
+    }
+  }
+  // 6b) "in N tagen"
+  if (!res.due) {
+    const inM = s.match(/(^|\s)in\s+(\d{1,3})\s+tag(?:en)?(\s|$)/i);
+    if (inM) { res.due = qcDateStr(parseInt(inM[2],10)); s = s.replace(inM[0],(inM[1]||' ')); }
+  }
+  // 6c) relative Wörter
+  if (!res.due) {
+    if (/(^|\s)heute(\s|$)/i.test(s))        { res.due = qcDateStr(0); s = s.replace(/(^|\s)heute(\s|$)/i,' '); }
+    else if (/(^|\s)übermorgen(\s|$)/i.test(s) || /(^|\s)uebermorgen(\s|$)/i.test(s)) { res.due = qcDateStr(2); s = s.replace(/(^|\s)(übermorgen|uebermorgen)(\s|$)/i,' '); }
+    else if (/(^|\s)morgen(\s|$)/i.test(s))  { res.due = qcDateStr(1); s = s.replace(/(^|\s)morgen(\s|$)/i,' '); }
+  }
+  // 6d) Wochentage (volle Namen) → nächstes Vorkommen
+  if (!res.due) {
+    for (const wd in QC_WEEKDAYS) {
+      const re = new RegExp('(^|\\s)' + wd + '(\\s|$)', 'i');
+      if (re.test(s)) {
+        const target = QC_WEEKDAYS[wd];
+        let delta = (target - new Date().getDay() + 7) % 7;
+        if (delta === 0) delta = 7;
+        res.due = qcDateStr(delta);
+        s = s.replace(re, ' ');
+        break;
+      }
+    }
+  }
+
+  // 7) Explizite Horizont-Wörter (ohne Datum)
+  if (/(^|\s)(nächste|naechste)\s+woche(\s|$)/i.test(s)) { res.horizon='week';  s=s.replace(/(^|\s)(nächste|naechste)\s+woche(\s|$)/i,' '); }
+  else if (/(^|\s)diese\s+woche(\s|$)/i.test(s))         { res.horizon='week';  s=s.replace(/(^|\s)diese\s+woche(\s|$)/i,' '); }
+  else if (/(^|\s)irgendwann(\s|$)/i.test(s))            { res.horizon='later'; s=s.replace(/(^|\s)irgendwann(\s|$)/i,' '); }
+  else if (/(^|\s)vielleicht(\s|$)/i.test(s))            { res.horizon='maybe'; s=s.replace(/(^|\s)vielleicht(\s|$)/i,' '); }
+
+  // 8) Horizont aus Datum ableiten (wenn nicht explizit)
+  if (!res.horizon && res.due) {
+    const d = diffDays(res.due);
+    if (d === null)      res.horizon = null;
+    else if (d <= 0)     res.horizon = 'today';
+    else if (d <= 7)     res.horizon = 'week';
+    else if (d <= 31)    res.horizon = 'month';
+    else                 res.horizon = 'later';
+  }
+
+  // 9) Titel = Rest, Tokens entfernt
+  res.title = s.replace(/\s+/g,' ').trim();
+  if (!res.title) res.title = (text || '').trim();
+  return res;
+}
+
+// Live-Vorschau der erkannten Felder
+function renderQuickPreview() {
+  const inp = document.getElementById('quick-input');
+  const prev = document.getElementById('quick-preview');
+  if (!inp || !prev) return;
+  const raw = inp.value.trim();
+  if (!raw) { prev.innerHTML = ''; return; }
+  const p = parseQuickInput(raw);
+  let chips = '';
+  const horizonLbl = { today:'☀️ Heute', week:'📅 Woche', month:'🗓 Monat', later:'💤 Irgendwann', maybe:'🤔 Vielleicht' };
+  if (p.due) {
+    const dd = diffDays(p.due);
+    const rel = dd === 0 ? 'heute' : dd === 1 ? 'morgen' : (dd>1 ? 'in '+dd+' Tagen' : p.due);
+    chips += '<span class="qc-chip">📅 ' + rel + (p.due_time ? ' · '+p.due_time : '') + '</span>';
+  } else if (p.due_time) {
+    chips += '<span class="qc-chip">🕐 ' + p.due_time + '</span>';
+  }
+  if (p.horizon && !p.due) chips += '<span class="qc-chip">' + (horizonLbl[p.horizon]||p.horizon) + '</span>';
+  if (p.context) { const cl = { focus:'🧠 Fokus', quick:'⚡ 10 Min', phone:'📞 Tel', mobile:'🚶 Unterwegs', team:'👥 Team', research:'📋 Recherche', docs:'📂 Unterlagen', it:'📲 IT', pc:'💻 PC', talk:'💬 Absprache', lexware:'💸 Lexware', people:'😬 people pleasing' }; chips += '<span class="qc-chip">' + (cl[p.context]||p.context) + '</span>'; }
+  if (p.impact) chips += '<span class="qc-chip">' + '★'.repeat(p.impact) + '</span>';
+  if (p.projectId && typeof projects !== 'undefined') { const pr = projects.find(x=>x.id===p.projectId); if (pr) chips += '<span class="qc-chip" style="border-color:'+pr.color+';color:'+pr.color+';">📁 '+escHtml(pr.name)+'</span>'; }
+  if (p.frog) chips += '<span class="qc-chip">🐸 Frosch</span>';
+  prev.innerHTML = '<div class="qc-prev-title">' + (p.title ? escHtml(p.title) : '<span style="color:var(--muted);">(kein Titel)</span>') + '</div>' + (chips ? '<div class="qc-chips">' + chips + '</div>' : '');
+}
+
+// Listener (repariert): Enter speichert, Eingabe aktualisiert Vorschau
+let quickListenerAttached = false;
+function attachQuickListener() {
+  if (quickListenerAttached) return;
+  const inp = document.getElementById('quick-input');
+  if (!inp) return;
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); saveQuickTask(); }
+  });
+  inp.addEventListener('input', renderQuickPreview);
+  quickListenerAttached = true;
+}
+
 function saveQuickTask() {
-  const title = document.getElementById('quick-input').value.trim();
-  if (!title) return;
+  const raw = document.getElementById('quick-input').value.trim();
+  if (!raw || raw === '✓ Gespeichert') return;
+  const p = parseQuickInput(raw);
 
   const task = {
     id:        'T' + Date.now(),
-    title,
+    title:     p.title,
     note:      null,
-    horizon:   null,       // kein Horizont = landet im Eingang
-    due:       null,
-    impact:    quickImpact,
+    horizon:   p.horizon,                 // null = Eingang
+    due:       p.due,
+    due_time:  p.due_time,
+    impact:    p.impact != null ? p.impact : quickImpact,
     eisen:     null,
-    context:   null,
+    context:   p.context,
+    effort:    null,
+    energy:    null,
     project:   null,
-    projectId: null,
+    projectId: p.projectId,
+    frog:      p.frog,
+    dread:     p.frog ? 3 : null,
     recurring: 'none',
     recurDays: null,
     waiting:   false,
@@ -2576,22 +2756,20 @@ function saveQuickTask() {
 
   tasks.push(task);
   save(tasks);
+  if (task.frog && typeof syncFrogToTracker === 'function') syncFrogToTracker(task);
 
-  // Kurze Bestätigung im Input, dann leeren für nächste Eingabe
+  // Kurze Bestätigung, dann leeren für nächste Eingabe
   const inp = document.getElementById('quick-input');
   inp.value = '✓ Gespeichert';
   inp.style.color = 'var(--accent2)';
-  setTimeout(() => {
-    inp.value = '';
-    inp.style.color = '';
-    inp.focus();
-  }, 600);
+  const prev = document.getElementById('quick-preview');
+  if (prev) prev.innerHTML = '';
+  setTimeout(() => { inp.value = ''; inp.style.color = ''; inp.focus(); }, 600);
 
   render();
-  showToast('⚡ Im Eingang');
+  const where = task.horizon ? ({today:'Heute',week:'Woche',month:'Monat',later:'Irgendwann',maybe:'Vielleicht'}[task.horizon]||'Eingang') : 'Eingang';
+  showToast('⚡ → ' + where);
 }
-
-// quick-input listener attached lazily on first open (element is after </body> injection)
 
 // ── FOCUS MODE ──
 let focusMode = false;
@@ -3921,9 +4099,10 @@ function authSignOut() {
       </div>
       <span class="star-label" id="quick-impact-label" style="font-size:0.65rem;">Mittel</span>
     </div>
+    <div class="quick-preview" id="quick-preview"></div>
     <div class="quick-hint">
       <span><kbd>Enter</kbd> speichern &nbsp;·&nbsp; <kbd>Esc</kbd> schließen</span>
-      <span>Horizon: Eingang</span>
+      <span>@kontext · +projekt · ★★★ · !3 · morgen · 14 uhr · 🐸</span>
     </div>
   </div>
 </div>

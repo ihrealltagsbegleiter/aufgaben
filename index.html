@@ -827,6 +827,15 @@ input[type=number] { max-width: 80px; text-align: center; }
 .quick-alt-btn:hover { border-color: var(--warn); }
 .log-del { opacity: 0.35; cursor: pointer; padding: 4px 7px; font-size: 0.85rem; flex-shrink: 0; align-self: center; }
 .log-del:hover { opacity: 1; color: var(--danger); }
+/* ── Mehr-Menü & Tagesbericht ── */
+.more-menu { position: fixed; top: 56px; right: 10px; z-index: 1000; background: var(--surface); border: 1px solid var(--border2); border-radius: 10px; box-shadow: var(--sh); padding: 6px; display: none; flex-direction: column; min-width: 210px; }
+.more-menu.open { display: flex; }
+.more-item { background: none; border: none; color: var(--text); text-align: left; padding: 11px 12px; border-radius: 7px; font-size: 0.9rem; cursor: pointer; }
+.more-item:hover, .more-item:active { background: var(--surface2); }
+.more-sep { height: 1px; background: var(--border); margin: 4px 8px; }
+.day-report { background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%); border: 1px solid var(--border2); border-left: 3px solid var(--accent); border-radius: var(--r); padding: 12px 14px; margin-bottom: 14px; }
+.day-report-title { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.day-report-body { font-size: 0.88rem; color: var(--text); line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -851,17 +860,25 @@ input[type=number] { max-width: 80px; text-align: center; }
   <div class="topbar-spacer"></div>
   <div class="topbar-actions">
     <span id="sync-status"></span>
-    <button class="btn-icon" id="sync-btn" onclick="manualSync()" title="Manuell synchronisieren" style="font-size:0.85rem;flex-shrink:0;">🔄</button>
-    <button class="btn-icon" id="notif-btn" onclick="notifToggle()" title="Erinnerungen aktivieren" style="font-size:0.85rem;flex-shrink:0;">🔕</button>
-    <button class="btn-icon" onclick="authSignOut()" title="Abmelden" style="font-size:0.9rem;opacity:0.6;">⎋</button>
     <button class="btn-icon" id="search-btn" onclick="openSearch()" title="Suchen (S)">🔍</button>
     <button class="btn-icon" id="filter-btn" onclick="toggleFilterPanel(event)" title="Filtern">⚙</button>
     <span class="filter-active-bar" id="filter-active-bar" onclick="clearAllFilters()">× Filter</span>
     <button class="btn-icon" id="sort-btn" onclick="toggleSortMenu(event)" title="Sortieren"><span id="sort-btn-label">↕</span></button>
     <button class="btn-icon" id="focus-btn" onclick="toggleFocusMode()" title="Fokus-Modus">◎</button>
     <button class="btn-icon" onclick="openReviewModal()" title="Review">↻</button>
+    <button class="btn-icon" id="more-btn" onclick="toggleMoreMenu(event)" title="Mehr">⋯</button>
     <button class="btn-icon btn-primary" id="main-add-btn" onclick="openAddModal()">+ Neu</button>
   </div>
+</div>
+
+<!-- Mehr-Menü: selten genutzte Funktionen -->
+<div class="more-menu" id="more-menu" onclick="event.stopPropagation()">
+  <button class="more-item" onclick="moreAction(manualSync)">🔄 Synchronisieren</button>
+  <button class="more-item" id="notif-btn" onclick="moreAction(notifToggle)">🔕 Erinnerungen aus</button>
+  <button class="more-item" onclick="moreAction(function(){switchTab('projects')})">📁 Projekte</button>
+  <button class="more-item" onclick="moreAction(function(){switchTab('log')})">📋 Protokoll</button>
+  <div class="more-sep"></div>
+  <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
 </div>
 
 <!-- APP BODY -->
@@ -893,7 +910,7 @@ input[type=number] { max-width: 80px; text-align: center; }
     <div class="sidebar-divider"></div>
     <div class="sidebar-section">
       <div class="sidebar-label">Ansichten</div>
-      <div class="nav-item" data-tab="projects" onclick="switchTab('projects')">
+      <div class="nav-item" data-tab="projects" onclick="switchTab('projects')" style="display:none;">
         <span class="ni-icon">📁</span><span class="ni-label">Projekte</span><span class="ni-badge" id="badge-projects">0</span>
       </div>
       <div class="nav-item" data-tab="focus" onclick="switchTab('focus')">
@@ -905,7 +922,7 @@ input[type=number] { max-width: 80px; text-align: center; }
       <div class="nav-item" data-tab="deepwork" onclick="switchTab('deepwork')">
         <span class="ni-icon">🎯</span><span class="ni-label">Deep Work</span>
       </div>
-      <div class="nav-item" data-tab="log" onclick="switchTab('log')">
+      <div class="nav-item" data-tab="log" onclick="switchTab('log')" style="display:none;">
         <span class="ni-icon">📋</span><span class="ni-label">Protokoll</span>
       </div>
     </div>
@@ -1396,8 +1413,12 @@ async function sbLoadAll() {
     const remoteLog     = lRows.map(r => r.data);
     const localLog      = loadLog();
     const logMap        = {};
-    localLog.forEach(e => logMap[e.id] = e);
-    remoteLog.forEach(e => logMap[e.id] = e);
+    localLog.forEach(e => { if (e && !e.deleted) logMap[e.id] = e; });
+    remoteLog.forEach(e => {
+      if (!e) return;
+      if (e.deleted) { delete logMap[e.id]; return; } // Tombstone: Eintrag bleibt gelöscht
+      logMap[e.id] = e;
+    });
     const mergedLog = Object.values(logMap).sort((a,b) => a.completedAt.localeCompare(b.completedAt));
     localStorage.setItem(LOG_KEY, JSON.stringify(mergedLog));
 
@@ -1754,6 +1775,7 @@ function renderHorizonInto(tab) {
       noTime.forEach(t => { html += taskCard(t, true); });
     }
   } else if (tab === 'today') {
+    html += dayReportHtml();
     const startedT = sorted.filter(t => t.started && (!t.recurring || t.recurring === 'none'));
     const oneShot  = sorted.filter(t => (!t.recurring || t.recurring === 'none') && !t.started);
     if (startedT.length) {
@@ -2259,9 +2281,60 @@ function notifUpdateBtn() {
   const b = document.getElementById('notif-btn');
   if (!b) return;
   const on = notifPref() && typeof Notification !== 'undefined' && Notification.permission === 'granted';
-  b.textContent = on ? '🔔' : '🔕';
+  b.textContent = on ? '🔔 Erinnerungen an' : '🔕 Erinnerungen aus';
   b.title = on ? 'Erinnerungen aktiv (Klick: aus)' : 'Erinnerungen aktivieren';
 }
+
+// ── TAGESBERICHT ("Dein Tag in Wahrheit") – ab 18 Uhr, 1× täglich ──
+const DAYREPORT_KEY = 'iab_dayreport_seen_v1';
+
+function dayReportData() {
+  const todays = logEntries.filter(e => e.completedAt && localDateStr(new Date(e.completedAt)) === todayStr());
+  return {
+    planned:   todays.filter(e => e.type !== 'unplanned').length,
+    unplanned: todays.filter(e => e.type === 'unplanned').length,
+    frogs:     todays.filter(e => e.frog).length,
+    loops:     tasks.filter(t => t.started && !t.waiting).length,
+  };
+}
+
+function dayReportHtml() {
+  if (new Date().getHours() < 18) return '';
+  if (localStorage.getItem(DAYREPORT_KEY) === todayStr()) return '';
+  const r = dayReportData();
+  const sum = r.planned + r.unplanned;
+  const loopsTxt = r.loops
+    ? ` · <b style="color:var(--warn);">${r.loops}</b> Schleife${r.loops > 1 ? 'n' : ''} offen`
+    : ' · keine offenen Schleifen 🎉';
+  const verdict = sum > 0
+    ? 'Du hast mehr geschafft, als es sich anfühlt.'
+    : 'Heute war Pause – auch das ist okay.';
+  return `<div class="day-report">
+    <div class="day-report-title">🌙 Dein Tag in Wahrheit</div>
+    <div class="day-report-body"><b>${r.planned}</b> geplant + <b style="color:var(--warn);">${r.unplanned}</b> ungeplant erledigt${r.frogs ? ' · 🐸 ' + r.frogs : ''}${loopsTxt}<br>${verdict}</div>
+    <button class="qe-btn" onclick="dayReportDismiss()" style="margin-top:8px;">Gesehen ✓</button>
+  </div>`;
+}
+
+function dayReportDismiss() {
+  localStorage.setItem(DAYREPORT_KEY, todayStr());
+  render();
+}
+
+// ── MEHR-MENÜ ──
+function toggleMoreMenu(ev) {
+  if (ev) ev.stopPropagation();
+  document.getElementById('more-menu').classList.toggle('open');
+}
+function closeMoreMenu() {
+  const m = document.getElementById('more-menu');
+  if (m) m.classList.remove('open');
+}
+function moreAction(fn) {
+  closeMoreMenu();
+  fn();
+}
+document.addEventListener('click', closeMoreMenu);
 
 async function notifToggle() {
   if (typeof Notification === 'undefined') { showToast('⚠️ Browser unterstützt keine Benachrichtigungen'); return; }
@@ -2325,6 +2398,12 @@ function notifTick() {
   });
   // 2) Überfällig-Digest: 1× täglich ab 9 Uhr, sanft formuliert
   const od = tasks.filter(t => !t.waiting && (!t.recurring || t.recurring === 'none') && diffDays(t.due) !== null && diffDays(t.due) < 0).length;
+  // 3) Tagesbericht ab 18 Uhr
+  if (!sent['day-report'] && now.getHours() >= 18) {
+    const r = dayReportData();
+    notifShow('🌙 Dein Tag in Wahrheit', r.planned + ' geplant + ' + r.unplanned + ' ungeplant erledigt' + (r.loops ? ', ' + r.loops + ' Schleife' + (r.loops > 1 ? 'n' : '') + ' offen' : '') + '.');
+    notifMarkSent('day-report');
+  }
   if (od > 0 && !sent['overdue-digest'] && now.getHours() >= 9) {
     notifShow('📋 ' + od + ' überfällige Aufgabe' + (od > 1 ? 'n' : ''), 'Kein Stress – nimm dir nur die kleinste zuerst vor.');
     notifMarkSent('overdue-digest');
@@ -3463,28 +3542,48 @@ function markStarted(id, ev) {
 }
 
 // ── PROTOKOLL LÖSCHEN (einzeln + komplett; nur online, sonst Wiederbelebung durch Sync) ──
-function logDeleteEntry(id, ev) {
+// Lokal speichern OHNE Re-Upsert (Lösch-Pfade): verhindert, dass der Sync
+// während der Löschung dazwischenfunkt.
+function saveLogLocal(entries) {
+  localStorage.setItem(LOG_KEY, JSON.stringify(entries));
+}
+
+// SYNC-FIX 06/2026: Hard-DELETE auf der log-Tabelle erzeugte Sync-Fehler
+// (serverseitig abgelehnt) und Wiederbelebung durch den Merge. Lösung wie bei
+// Aufgaben: Tombstone (deleted:true) per Upsert – Upserts funktionieren belegt.
+function logTombstone(e) {
+  return { id: e.id, deleted: true, completedAt: e.completedAt || new Date().toISOString() };
+}
+
+async function logDeleteEntry(id, ev) {
   if (ev) ev.stopPropagation();
   if (!navigator.onLine) { showToast('⚠️ Löschen nur online möglich (sonst stellt der Sync es wieder her)'); return; }
+  const entry = logEntries.find(e => e.id === id);
   logEntries = logEntries.filter(e => e.id !== id);
-  saveLog(logEntries);
-  sbDelete('log', id);
+  saveLogLocal(logEntries);
   renderLogTab();
   showToast('🗑 Eintrag gelöscht');
+  if (entry) {
+    const ok = await sbUpsertNow('log', [{ id: entry.id, data: logTombstone(entry) }]);
+    if (ok) setSyncStatus('ok');
+    sbDelete('log', id); // best effort, Tombstone ist die Absicherung
+  }
 }
 
 async function logClearAll() {
   if (!navigator.onLine) { showToast('⚠️ Löschen nur online möglich (sonst stellt der Sync es wieder her)'); return; }
   if (!logEntries.length) { showToast('Protokoll ist bereits leer'); return; }
   if (!confirm('Gesamtes Protokoll löschen?\n\nAchtung: Tageszähler und 🔥-Serie basieren darauf und beginnen wieder bei 0.\nWiederkehrende Aufgaben und offene Aufgaben sind NICHT betroffen.')) return;
-  const ids = logEntries.map(e => e.id);
+  const old = logEntries;
   logEntries = [];
-  saveLog(logEntries);
+  saveLogLocal(logEntries);
   renderLogTab();
   showToast('🗑 Protokoll wird gelöscht…');
-  // Gezielte Einzel-Deletes statt Wildcard: löscht garantiert nur eigene, bekannte IDs
-  for (const id of ids) { await sbDelete('log', id); }
-  showToast('🗑 Protokoll gelöscht (' + ids.length + ' Einträge)');
+  // EIN Upsert-Call mit allen Tombstones statt N riskanter DELETEs
+  const ok = await sbUpsertNow('log', old.map(e => ({ id: e.id, data: logTombstone(e) })));
+  if (ok) { setSyncStatus('ok'); showToast('🗑 Protokoll gelöscht (' + old.length + ' Einträge)'); }
+  else showToast('⚠️ Server nicht erreicht – lokal gelöscht, Sync folgt');
+  old.forEach(e => sbDelete('log', e.id)); // best effort Aufräumen
 }
 
 // ── FOCUS MODE ──

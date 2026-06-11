@@ -836,6 +836,13 @@ input[type=number] { max-width: 80px; text-align: center; }
 .day-report { background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%); border: 1px solid var(--border2); border-left: 3px solid var(--accent); border-radius: var(--r); padding: 12px 14px; margin-bottom: 14px; }
 .day-report-title { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
 .day-report-body { font-size: 0.88rem; color: var(--text); line-height: 1.5; }
+/* ── Aufklapp-Pfeil & Fokus-Modus-Details ── */
+.task-expand-btn { order: 99; margin-left: auto; flex-shrink: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 7px; border: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; cursor: pointer; align-self: flex-start; }
+.task-expand-btn:hover, .task-expand-btn:active { color: var(--text); border-color: var(--border2); background: var(--surface2); }
+.task-card.expanded .task-expand-btn { color: var(--accent); border-color: rgba(57,255,20,.35); }
+/* Im Fokus-Modus bleiben Tags versteckt – außer die Karte ist bewusst aufgeklappt */
+.focus-mode .task-card.expanded .task-meta { display: flex !important; flex-wrap: wrap; }
+.focus-mode .task-card.expanded .task-meta-row { display: flex !important; }
 </style>
 </head>
 <body>
@@ -1781,6 +1788,7 @@ function renderHorizonInto(tab) {
     if (startedT.length) {
       html += `<div class="section-header"><span class="section-label" style="color:var(--warn);">⏯ Angefangen – offene Schleifen (${startedT.length})</span><div class="section-line"></div></div>`;
       startedT.forEach(t => { html += taskCard(t); });
+      html += `<div class="section-header" style="margin-top:14px;"><span class="section-label">☀️ Aufgaben</span><div class="section-line"></div></div>`;
     }
     const routines = sorted.filter(t => t.recurring && t.recurring !== 'none');
     if (oneShot.length > 5) {
@@ -1958,10 +1966,11 @@ function taskCard(task, isRecurring = false) {
 
   const note = (task.note && expanded) ? `<div class="task-note">${escHtml(task.note)}</div>` : '';
 
-  return `<div class="task-card urgency-${urg}${task.frog ? ' is-frog' : ''}" id="card-${task.id}" onclick="toggleExpand('${task.id}',event)">
+  return `<div class="task-card urgency-${urg}${task.frog ? ' is-frog' : ''}${expanded ? ' expanded' : ''}" id="card-${task.id}" onclick="toggleExpand('${task.id}',event)">
     ${task.recurring && task.recurring !== 'none' ? '<div class="recurring-dot"></div>' : ''}
     <div class="task-top">
       <div class="task-check ${''}" onclick="checkTask('${task.id}',event)"></div>
+      <div class="task-expand-btn" onclick="forceExpand('${task.id}',event)" title="${expanded ? 'Details zuklappen' : 'Details aufklappen'}">${expanded ? '▾' : '▸'}</div>
       <div class="task-body">
         <div class="task-title" onclick="startInlineEdit('${task.id}',event)">${escHtml(task.title)}</div>
         ${note}
@@ -2069,6 +2078,17 @@ function startInlineEdit(id, e) {
 }
 
 // ── INTERACTIONS ──
+function forceExpand(id, e) {
+  if (e) e.stopPropagation();
+  if (expandedIds.has(id)) {
+    expandedIds.delete(id);
+    if (activeQeField && activeQeField.id === id) activeQeField = null;
+  } else {
+    expandedIds.add(id);
+  }
+  renderList();
+}
+
 function toggleExpand(id, e) {
   if (e.target.closest('.task-check') || e.target.closest('.task-action-btn') || e.target.closest('.task-title') || e.target.closest('.tag-clickable')) return;
   if (expandedIds.has(id)) {

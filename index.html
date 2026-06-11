@@ -2090,7 +2090,7 @@ function stPanelHtml(t) {
   const items = st.map(s =>
     `<div class="st-item${s.done ? ' done' : ''}"><div class="st-chk" onclick="stToggle('${t.id}','${s.id}',event)">${s.done ? '✓' : ''}</div><div class="st-title">${escHtml(s.title)}</div><span class="st-del" onclick="stDelete('${t.id}','${s.id}',event)" title="Schritt löschen">✕</span></div>`
   ).join('');
-  return `<div class="st-list">${items}</div><div class="st-add-row"><input class="st-add-input" id="st-input-${t.id}" placeholder="🧩 Nächster kleiner Schritt…" onclick="event.stopPropagation()" onkeydown="stKey('${t.id}',event)"/><button class="qe-btn" onclick="stAdd('${t.id}',event)">+ Schritt</button></div>`;
+  return `<div class="st-list">${items}</div><div class="st-add-row"><input class="st-add-input" id="st-input-${t.id}" placeholder="🧩 Nächster kleiner Schritt…" onclick="event.stopPropagation()" onkeydown="stKey('${t.id}',event)"/><button class="qe-btn" onclick="stAdd('${t.id}',event)">+ Schritt</button></div><div id="ai-area-${t.id}" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">${aiBtnHtml(t)}</div>`;
 }
 
 function stAdd(taskId, ev) {
@@ -2273,6 +2273,110 @@ function notifTick() {
 setInterval(notifTick, 60000);
 setTimeout(notifTick, 4000);
 notifUpdateBtn();
+
+// ── KI-ZERLEGUNG (Anthropic API · Key bleibt lokal auf dem Gerät, nie im Sync) ──
+const AI_KEY_STORAGE = 'iab_anthropic_key_v1';
+const AI_MODEL = 'claude-haiku-4-5-20251001';
+const AI_BREAKDOWN_PROMPT = 'Du hilfst einer Person mit ADHS, eine blockierende Aufgabe endlich zu starten. Zerlege die folgende Aufgabe in 3 bis 7 konkrete, sofort ausführbare Mini-Schritte. Regeln: Der erste Schritt muss lächerlich klein sein (unter 2 Minuten, z. B. "Dokument öffnen"). Jeder Schritt maximal 10 Wörter und beginnt mit einem Verb. Keine vagen Schritte wie "planen", "überlegen" oder "vorbereiten". Antworte AUSSCHLIESSLICH mit einem JSON-Array aus Strings, ohne Markdown, ohne Erklärung.\n\nAufgabe:\n';
+
+function aiGetKey() { return localStorage.getItem(AI_KEY_STORAGE) || ''; }
+
+function aiBtnHtml(t) {
+  const hot = t.frog && (t.dread || 0) >= 4;
+  const style = hot ? 'style="border-color:var(--accent);color:var(--accent);"' : '';
+  const keyDel = aiGetKey() ? `<button class="qe-btn" onclick="aiDeleteKey(event)" title="Gespeicherten API-Key von diesem Gerät löschen" style="opacity:0.5;">🔑✕</button>` : '';
+  return `<button class="qe-btn" id="ai-btn-${t.id}" ${style} onclick="aiBreakdown('${t.id}',event)">🤖 Zerlegen lassen${hot ? ' (gegen den Widerstand)' : ''}</button>${keyDel}`;
+}
+
+function aiShowKeyForm(taskId) {
+  const area = document.getElementById('ai-area-' + taskId);
+  if (!area) return;
+  area.innerHTML = `<div style="margin-top:6px;font-size:0.74rem;color:var(--muted);line-height:1.4;">🔑 Dafür ist ein eigener Anthropic-API-Key nötig (console.anthropic.com → API Keys). Er wird <b>nur auf diesem Gerät</b> gespeichert und nie synchronisiert.</div>
+    <div class="st-add-row"><input type="password" class="st-add-input" id="ai-key-input" placeholder="sk-ant-…" onclick="event.stopPropagation()" onkeydown="event.stopPropagation()"/><button class="qe-btn" onclick="aiSaveKey('${taskId}',event)">Speichern</button></div>`;
+  const inp = document.getElementById('ai-key-input');
+  if (inp) inp.focus();
+}
+
+function aiSaveKey(taskId, ev) {
+  if (ev) ev.stopPropagation();
+  const inp = document.getElementById('ai-key-input');
+  const v = (inp ? inp.value : '').trim();
+  if (!v.startsWith('sk-ant-')) { showToast('⚠️ Das ist kein Anthropic-Key (beginnt mit sk-ant-…)'); return; }
+  localStorage.setItem(AI_KEY_STORAGE, v);
+  showToast('🔑 Key lokal gespeichert');
+  aiBreakdown(taskId);
+}
+
+function aiDeleteKey(ev) {
+  if (ev) ev.stopPropagation();
+  localStorage.removeItem(AI_KEY_STORAGE);
+  showToast('🔑 Key von diesem Gerät gelöscht');
+  render();
+}
+
+async function aiBreakdown(taskId, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === taskId);
+  if (!t) return;
+  if (!aiGetKey()) { aiShowKeyForm(taskId); return; }
+  const btn = document.getElementById('ai-btn-' + taskId);
+  if (btn) { btn.disabled = true; btn.textContent = '🤖 denkt…'; }
+  try {
+    const ctx = [t.title, t.note ? 'Kontext: ' + t.note : '', t.frog ? 'Aufschiebe-Level: ' + (t.dread || 3) + '/5' : ''].filter(Boolean).join('\n');
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': aiGetKey(),
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 600, messages: [{ role: 'user', content: AI_BREAKDOWN_PROMPT + ctx }] })
+    });
+    if (res.status === 401 || res.status === 403) { showToast('⚠️ API-Key ungültig oder abgelaufen'); aiShowKeyForm(taskId); return; }
+    if (!res.ok) { showToast('⚠️ KI-Fehler (' + res.status + ') – später erneut versuchen'); return; }
+    const data = await res.json();
+    const text = (data.content || []).map(c => c.text || '').join('').replace(/```json|```/g, '').trim();
+    let steps;
+    try { steps = JSON.parse(text); } catch (e) { showToast('⚠️ KI-Antwort nicht lesbar – nochmal versuchen'); return; }
+    if (!Array.isArray(steps) || !steps.length) { showToast('⚠️ Keine Schritte erhalten'); return; }
+    if (!Array.isArray(t.subtasks)) t.subtasks = [];
+    let added = 0;
+    steps.slice(0, 7).forEach(s => {
+      if (typeof s === 'string' && s.trim()) {
+        t.subtasks.push({ id: 'S' + Date.now() + Math.floor(Math.random() * 100000), title: s.trim().slice(0, 120), done: false });
+        added++;
+      }
+    });
+    if (!added) { showToast('⚠️ Keine verwertbaren Schritte'); return; }
+    save(tasks);
+    render();
+    showToast('🤖 ' + added + ' Mini-Schritte erstellt – fang nur mit dem ersten an!');
+  } catch (e) {
+    showToast('⚠️ Netzwerkfehler – KI nicht erreichbar');
+  } finally {
+    const b = document.getElementById('ai-btn-' + taskId);
+    if (b) { b.disabled = false; b.textContent = '🤖 Zerlegen lassen'; }
+  }
+}
+
+// ── SHARE-TARGET & APP-SHORTCUTS (reibungsloses Erfassen aus jeder App) ──
+function handleLaunchParams(search) {
+  const p = new URLSearchParams(typeof search === 'string' ? search : location.search);
+  const shared = [p.get('share-title'), p.get('share-text'), p.get('share-url')].filter(Boolean).join(' ').trim();
+  const wantNew = p.get('action') === 'new';
+  if (!shared && !wantNew) return false;
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  openQuick();
+  if (shared) {
+    const inp = document.getElementById('quick-input');
+    if (inp) {
+      inp.value = shared.slice(0, 200);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  return true;
+}
 
 // ── TASK-TIMER (sichtbare Zeit gegen Zeitblindheit; ein Timer = ein Fokus) ──
 const TT_EFFORT_MIN = { s: 15, m: 60, l: 90 };
@@ -4427,6 +4531,7 @@ function authSignOut() {
   const sess = await authGetSession();
   if (sess && sess.access_token) {
     await authLaunchApp(sess);
+    handleLaunchParams();
   } else {
     // Auth-Screen anzeigen, Enter-Key support
     document.getElementById('auth-screen').style.display = 'flex';

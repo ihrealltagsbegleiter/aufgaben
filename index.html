@@ -519,9 +519,10 @@ input[type=number] { max-width: 80px; text-align: center; }
   .sidebar-section { padding: 0; display: flex; gap: 2px; }
   .sidebar-label { display: none; }
   .sidebar-divider { display: none; }
-  .nav-item { padding: 5px 10px; white-space: nowrap; flex-direction: column; gap: 2px; min-width: auto; font-size: 0.7rem; }
+  .nav-item { padding: 8px 11px; white-space: nowrap; flex-direction: column; gap: 2px; min-width: 48px; font-size: 0.7rem; position: relative; }
   .nav-item .ni-icon { margin-right: 0; font-size: 1rem; }
-  .nav-item .ni-label { display: none; }
+  .nav-item .ni-label { display: block; flex: none; font-size: 0.56rem; letter-spacing: 0.02em; }
+  .nav-item .ni-badge { position: absolute; top: 0; right: 0; font-size: 0.55rem; padding: 0 4px; min-width: 14px; }
 }
 
 @media (min-width: 641px) {
@@ -1114,15 +1115,9 @@ function saveLog(entries) {
   sbUpsertLog(entries.slice(-500));
 }
 async function sbUpsertLog(entries) {
-  if (!navigator.onLine || !entries.length) return;
-  try {
-    const rows = entries.map(e => ({ id: e.id, data: e }));
-    await fetch(`${SB_URL}/rest/v1/log`, {
-      method: 'POST',
-      headers: SB_HEADERS,
-      body: JSON.stringify(rows)
-    });
-  } catch(e) { console.warn('Log sync error:', e); }
+  if (!entries.length) return;
+  const ok = await sbUpsertNow('log', entries.map(e => ({ id: e.id, data: e })));
+  if (ok) setSyncStatus('ok');
 }
 async function sbLoadLog() {
   try {
@@ -1135,45 +1130,89 @@ async function sbLoadLog() {
 
 // ── SUPABASE SYNC ──
 let syncDebounce = {};
+let pendingPush = false; // offene lokale Änderungen, die noch nicht in der Cloud sind
+
+// Zentraler Fetch: prüft res.ok, refresht abgelaufene Tokens (401) automatisch
+// und versucht den Request danach genau einmal erneut.
+async function sbFetch(url, options = {}) {
+  const build = () => ({ ...options, headers: { ...SB_HEADERS, ...(options.headers || {}) } });
+  let res = await fetch(url, build());
+  if (res.status === 401) {
+    const refreshed = await sbForceRefresh();
+    if (refreshed) res = await fetch(url, build());
+  }
+  return res;
+}
+
+// Token zwangsweise erneuern (z. B. nach 401 trotz scheinbar gültiger Session)
+async function sbForceRefresh() {
+  try {
+    const stored = JSON.parse(localStorage.getItem('iab_session') || 'null');
+    if (!stored || !stored.refresh_token) return null;
+    const sess = await authRefresh(stored.refresh_token);
+    if (sess && sess.access_token) { Object.assign(SB_HEADERS, authGetHeaders(sess)); return sess; }
+    return null;
+  } catch { return null; }
+}
+
+// Sofort-Upsert ohne Debounce — Rückgabewert: true = in der Cloud angekommen
+async function sbUpsertNow(table, rows) {
+  if (!rows.length) return true;
+  if (!navigator.onLine) { pendingPush = true; setSyncStatus('offline'); return false; }
+  try {
+    const res = await sbFetch(`${SB_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      body: JSON.stringify(rows)
+    });
+    if (!res.ok) { pendingPush = true; setSyncStatus('error'); console.warn('Sync rejected:', table, res.status); return false; }
+    return true;
+  } catch(e) {
+    pendingPush = true;
+    setSyncStatus(navigator.onLine ? 'error' : 'offline');
+    console.warn('Sync error:', table, e);
+    return false;
+  }
+}
 
 function sbUpsertAll(table, items) {
   clearTimeout(syncDebounce[table]);
   syncDebounce[table] = setTimeout(async () => {
-    if (!navigator.onLine) return;
-    try {
-      const rows = items.map(item => ({ id: item.id, data: item }));
-      await fetch(`${SB_URL}/rest/v1/${table}`, {
-        method: 'POST',
-        headers: SB_HEADERS,
-        body: JSON.stringify(rows)
-      });
-    } catch(e) { console.warn('Sync error:', e); }
+    const rows = items.map(item => ({ id: item.id, data: item }));
+    const ok = await sbUpsertNow(table, rows);
+    if (ok) setSyncStatus('ok');
   }, 800);
 }
 
 function sbUpsertDone(doneObj) {
   clearTimeout(syncDebounce['done_log']);
   syncDebounce['done_log'] = setTimeout(async () => {
-    if (!navigator.onLine) return;
-    try {
-      const rows = Object.entries(doneObj).map(([id, date]) => ({ id, data: { id, date } }));
-      if (rows.length === 0) return;
-      await fetch(`${SB_URL}/rest/v1/done_log`, {
-        method: 'POST',
-        headers: SB_HEADERS,
-        body: JSON.stringify(rows)
-      });
-    } catch(e) { console.warn('Sync error done:', e); }
+    const rows = Object.entries(doneObj).map(([id, date]) => ({ id, data: { id, date } }));
+    const ok = await sbUpsertNow('done_log', rows);
+    if (ok) setSyncStatus('ok');
   }, 800);
+}
+
+// Alles, was lokal liegt, sofort in die Cloud schieben (Reconnect / manueller Sync)
+async function sbPushAll() {
+  for (const t of Object.values(syncDebounce)) clearTimeout(t);
+  const results = await Promise.all([
+    sbUpsertNow('tasks',    tasks.map(t => ({ id: t.id, data: t }))),
+    sbUpsertNow('projects', projects.map(p => ({ id: p.id, data: p }))),
+    sbUpsertNow('done_log', Object.entries(loadDone()).map(([id, date]) => ({ id, data: { id, date } }))),
+    sbUpsertNow('log',      logEntries.slice(-500).map(e => ({ id: e.id, data: e })))
+  ]);
+  const allOk = results.every(Boolean);
+  if (allOk) pendingPush = false;
+  return allOk;
 }
 
 async function sbLoadAll() {
   try {
     const [tRes, pRes, dRes, lRes] = await Promise.all([
-      fetch(`${SB_URL}/rest/v1/tasks?select=id,data,updated_at&order=updated_at.desc`, { headers: SB_HEADERS }),
-      fetch(`${SB_URL}/rest/v1/projects?select=id,data,updated_at&order=updated_at.desc`, { headers: SB_HEADERS }),
-      fetch(`${SB_URL}/rest/v1/done_log?select=id,data`, { headers: SB_HEADERS }),
-      fetch(`${SB_URL}/rest/v1/log?select=id,data&order=data->>completedAt.desc&limit=500`, { headers: SB_HEADERS })
+      sbFetch(`${SB_URL}/rest/v1/tasks?select=id,data,updated_at&order=updated_at.desc`),
+      sbFetch(`${SB_URL}/rest/v1/projects?select=id,data,updated_at&order=updated_at.desc`),
+      sbFetch(`${SB_URL}/rest/v1/done_log?select=id,data`),
+      sbFetch(`${SB_URL}/rest/v1/log?select=id,data&order=data->>completedAt.desc&limit=500`)
     ]);
     if (!tRes.ok || !pRes.ok || !dRes.ok) return false;
 
@@ -1182,6 +1221,13 @@ async function sbLoadAll() {
     const remoteTasks    = tRows.map(r => r.data);
     const remoteProjects = pRows.map(r => r.data);
     const remoteDone     = Object.fromEntries(dRows.map(r => [r.data.id, r.data.date]));
+
+    // Tombstone-GC: gelöschte Aufgaben bleiben 30 Tage als Marker in der Cloud,
+    // damit Offline-Geräte sie nicht wiederbeleben — danach endgültig entfernen.
+    const gcCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    remoteTasks
+      .filter(t => t.deleted && t.deletedAt && new Date(t.deletedAt).getTime() < gcCutoff)
+      .forEach(t => sbDelete('tasks', t.id));
 
     // Merge: remote wins for same ID (newest updated_at)
     const localTasks    = load();
@@ -1224,28 +1270,16 @@ async function sbLoadAll() {
 async function sbDelete(table, id) {
   if (!navigator.onLine) return;
   try {
-    await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
-      method: 'DELETE',
-      headers: SB_HEADERS
-    });
+    await sbFetch(`${SB_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
   } catch(e) { console.warn('Delete sync error:', e); }
 }
 
-// Upsert a tombstone (deleted:true) so all devices stop resurrecting the task,
-// then hard-delete from Supabase after a short delay
+// Tombstone (deleted:true) hochladen, damit kein Gerät die Aufgabe wiederbelebt.
+// Bleibt 30 Tage bestehen (GC in sbLoadAll) — ein sofortiges Hard-Delete würde
+// Offline-Geräten die Chance nehmen, die Löschung mitzubekommen.
 async function sbUpsertTombstone(deletedTask) {
-  if (!navigator.onLine) { sbDelete('tasks', deletedTask.id); return; }
-  try {
-    await fetch(`${SB_URL}/rest/v1/tasks`, {
-      method: 'POST',
-      headers: SB_HEADERS,
-      body: JSON.stringify([{ id: deletedTask.id, data: deletedTask }])
-    });
-    // Hard-delete after 5s — all online devices will have synced the tombstone by then
-    setTimeout(() => sbDelete('tasks', deletedTask.id), 5000);
-  } catch(e) {
-    sbDelete('tasks', deletedTask.id);
-  }
+  const ok = await sbUpsertNow('tasks', [{ id: deletedTask.id, data: deletedTask }]);
+  if (ok) setSyncStatus('ok');
 }
 
 // ── STATE ──
@@ -1270,8 +1304,14 @@ let fEnergy  = null; // low|mid|high, null = nicht gesetzt
 let fRecur   = 'none';
 
 // ── DATE UTILS ──
+// Lokales Datum (YYYY-MM-DD) — toISOString() liefert UTC und wäre in DE
+// zwischen Mitternacht und 01:00/02:00 Uhr (MEZ/MESZ) um einen Tag falsch.
+function localDateStr(d) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), da = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + da;
+}
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return localDateStr(new Date());
 }
 function diffDays(dateStr) {
   if (!dateStr) return null;
@@ -1394,7 +1434,7 @@ function autoEscalate() {
     const d = new Date();
     const day = d.getDay() === 0 ? 6 : d.getDay() - 1; // Mo=0 … So=6
     d.setDate(d.getDate() + (6 - day)); // Sonntag dieser Woche
-    return d.toISOString().split('T')[0];
+    return localDateStr(d);
   })();
 
   tasks.forEach(t => {
@@ -2563,7 +2603,7 @@ function setQuickImpact(val) {
 
 // ── QUICK-CAPTURE PARSER (natürliche Sprache → Felder) ──
 const QC_CTX_SYN = {
-  telefon:'phone', telefonieren:'phone', anrufen:'phone', tel:'phone', call:'phone',
+  telefon:'phone', telefonieren:'phone', anrufen:'phone', tel:'phone', call:'phone', phone:'phone',
   pc:'pc', computer:'pc', rechner:'pc',
   unterwegs:'mobile', mobil:'mobile',
   team:'team',
@@ -2978,7 +3018,14 @@ function setSyncStatus(status) {
   el.style.color = col[status] || 'var(--muted)';
 }
 
-window.addEventListener('online',  () => { setSyncStatus('syncing'); sbLoadAll().then(d => { if(d){tasks=d.tasks;projects=d.projects;if(d.log)logEntries=d.log;render();} setSyncStatus('ok'); }); });
+window.addEventListener('online', async () => {
+  setSyncStatus('syncing');
+  const d = await sbLoadAll();
+  if (d) { tasks = d.tasks; projects = d.projects; if (d.log) logEntries = d.log; render(); }
+  // Lokale Offline-Änderungen jetzt in die Cloud schieben
+  const ok = await sbPushAll();
+  setSyncStatus(ok ? 'ok' : 'error');
+});
 window.addEventListener('offline', () => setSyncStatus('offline'));
 
 async function manualSync() {
@@ -2986,14 +3033,14 @@ async function manualSync() {
   if (btn) { btn.style.opacity = '0.4'; btn.style.pointerEvents = 'none'; }
   setSyncStatus('syncing');
   try {
-    await sbUpsertAll('tasks', tasks);
-    await sbUpsertAll('projects', projects);
     const remote = await sbLoadAll();
     if (remote) { tasks = remote.tasks; projects = remote.projects; if (remote.log) logEntries = remote.log; render(); }
+    const pushed = await sbPushAll();
+    if (!remote || !pushed) throw new Error('sync incomplete');
     setSyncStatus('ok');
     showToast('✅ Sync abgeschlossen');
   } catch(e) {
-    setSyncStatus('error');
+    setSyncStatus(navigator.onLine ? 'error' : 'offline');
     showToast('❌ Sync fehlgeschlagen');
   } finally {
     if (btn) { btn.style.opacity = ''; btn.style.pointerEvents = ''; }
@@ -3068,6 +3115,7 @@ document.addEventListener('keydown', e => {
 
 // ── INIT ──
 async function init() {
+  render(); // Lokale Daten sofort anzeigen — Cloud-Sync läuft im Hintergrund
   setSyncStatus('syncing');
   const remote = await sbLoadAll();
   if (remote) {
@@ -3075,10 +3123,16 @@ async function init() {
     projects   = remote.projects;
     if (remote.log) logEntries = remote.log;
     setSyncStatus('ok');
+    render();
   } else {
     setSyncStatus(navigator.onLine ? 'error' : 'offline');
   }
-  render();
+  // Access-Token läuft nach ~1 h ab — proaktiv erneuern, damit Hintergrund-Syncs
+  // nicht still fehlschlagen (zusätzlich fängt sbFetch 401 per Retry ab).
+  setInterval(async () => {
+    const sess = await authGetSession();
+    if (sess && sess.access_token) Object.assign(SB_HEADERS, authGetHeaders(sess));
+  }, 45 * 60 * 1000);
 }
 
 // init() wird von startup() nach Auth aufgerufen
@@ -3217,7 +3271,7 @@ function renderCalendarTab() {
     const label = d.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long' });
     const items = eventMap[selectedDate].map(ev => {
       const icon = ev.frog ? '🐸' : ev.type === 'recurring' ? '↻' : '📌';
-      const meta = ev.type === 'recurring' ? ev.recurLabel : (ev.proj ? `📁 ${ev.proj.name}` : '');
+      const meta = ev.type === 'recurring' ? ev.recurLabel : (ev.proj ? `📁 ${escHtml(ev.proj.name)}` : '');
       return `<div class="cal-detail-item">
         <div class="cal-detail-icon">${icon}</div>
         <div>
@@ -3291,14 +3345,14 @@ function dwFmt(sec) {
   if (h > 0) return `${h}h ${String(m).padStart(2,'0')}m`;
   return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
-function dwTodayKey() { return new Date().toISOString().slice(0,10); }
+function dwTodayKey() { return localDateStr(new Date()); }
 function dwFmtDate(iso) {
   return new Date(iso).toLocaleDateString('de-DE', { weekday:'short', day:'2-digit', month:'short' });
 }
 function dwGroupByDay(sessions) {
   const m = {};
   sessions.forEach(s => {
-    const d = s.date.slice(0,10);
+    const d = localDateStr(new Date(s.date)); // lokaler Tagesschlüssel statt UTC
     if (!m[d]) m[d] = { date:d, total:0, count:0 };
     m[d].total += s.dur; m[d].count++;
   });
@@ -3391,7 +3445,7 @@ function renderDeepWorkTab() {
   const last14 = [];
   for (let i = 13; i >= 0; i--) {
     const d = new Date(); d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0,10);
+    const key = localDateStr(d);
     const g = dayGroups.find(x => x.date === key);
     last14.push({ date: key, total: g ? g.total : 0 });
   }
@@ -3577,7 +3631,7 @@ function renderLogTab() {
 
   const byDay = {};
   filtered.forEach(e => {
-    const day = e.completedAt.split('T')[0];
+    const day = localDateStr(new Date(e.completedAt)); // lokaler Tag statt UTC
     if (!byDay[day]) byDay[day] = [];
     byDay[day].push(e);
   });
@@ -3818,7 +3872,7 @@ function checkTaskFromSearch(id, e) {
 // ── PWA SERVICE WORKER ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/tracker/sw-aufgaben.js')
+    navigator.serviceWorker.register('/aufgaben/sw.js')
       .then(r => console.log('SW registered:', r.scope))
       .catch(e => console.warn('SW error:', e));
   });

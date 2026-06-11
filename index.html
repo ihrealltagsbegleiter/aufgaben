@@ -114,6 +114,24 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 
 .sidebar-divider { height: 1px; background: var(--border); margin: 8px 14px; }
 
+/* ── SUBNAV (Segment-Umschalter für Geplant/Fokus) ── */
+.subnav { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+.subnav-seg {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 20px; cursor: pointer;
+  font-size: 0.78rem; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--border);
+  transition: all 0.1s; user-select: none; white-space: nowrap;
+}
+.subnav-seg:hover { color: var(--text); border-color: var(--muted); }
+.subnav-seg.active { background: rgba(200,169,110,0.12); color: var(--accent); border-color: var(--accent); }
+.subnav-seg .ss-badge {
+  font-size: 0.58rem; min-width: 15px; height: 15px;
+  background: var(--surface2); border-radius: 20px;
+  display: flex; align-items: center; justify-content: center; padding: 0 4px;
+}
+.subnav-seg.active .ss-badge { background: var(--accent); color: #111; }
+
 /* ── MAIN CONTENT ── */
 .main { flex: 1; overflow-y: auto; overflow-x: hidden; }
 .main::-webkit-scrollbar { width: 4px; }
@@ -707,26 +725,14 @@ input[type=number] { max-width: 80px; text-align: center; }
       <div class="nav-item active" data-tab="inbox" onclick="switchTab('inbox')">
         <span class="ni-icon">📥</span><span class="ni-label">Eingang</span><span class="ni-badge" id="badge-inbox">0</span>
       </div>
-      <div class="nav-item" data-tab="frogs" onclick="switchTab('frogs')">
-        <span class="ni-icon">🐸</span><span class="ni-label">Frösche</span>
-      </div>
       <div class="nav-item" id="nav-overdue" data-tab="overdue" onclick="switchTab('overdue')" style="display:none;">
         <span class="ni-icon">🔴</span><span class="ni-label">Überfällig</span><span class="ni-badge" id="badge-overdue" style="background:var(--danger);color:#fff;">0</span>
       </div>
       <div class="nav-item" data-tab="today" onclick="switchTab('today')">
         <span class="ni-icon">☀️</span><span class="ni-label">Heute</span><span class="ni-badge" id="badge-today">0</span>
       </div>
-      <div class="nav-item" data-tab="week" onclick="switchTab('week')">
-        <span class="ni-icon">📅</span><span class="ni-label">Woche</span><span class="ni-badge" id="badge-week">0</span>
-      </div>
-      <div class="nav-item" data-tab="month" onclick="switchTab('month')">
-        <span class="ni-icon">🗓</span><span class="ni-label">Monat</span><span class="ni-badge" id="badge-month">0</span>
-      </div>
-      <div class="nav-item" data-tab="later" onclick="switchTab('later')">
-        <span class="ni-icon">💤</span><span class="ni-label">Irgendwann</span><span class="ni-badge" id="badge-later">0</span>
-      </div>
-      <div class="nav-item" data-tab="maybe" onclick="switchTab('maybe')">
-        <span class="ni-icon">🤔</span><span class="ni-label">Vielleicht</span><span class="ni-badge" id="badge-maybe">0</span>
+      <div class="nav-item" data-tab="planned" onclick="switchTab('planned')">
+        <span class="ni-icon">📆</span><span class="ni-label">Geplant</span><span class="ni-badge" id="badge-planned">0</span>
       </div>
       <div class="nav-item" data-tab="recurring" onclick="switchTab('recurring')">
         <span class="ni-icon">↻</span><span class="ni-label">Regelmäßig</span><span class="ni-badge" id="badge-recurring">0</span>
@@ -741,20 +747,17 @@ input[type=number] { max-width: 80px; text-align: center; }
       <div class="nav-item" data-tab="projects" onclick="switchTab('projects')">
         <span class="ni-icon">📁</span><span class="ni-label">Projekte</span><span class="ni-badge" id="badge-projects">0</span>
       </div>
-      <div class="nav-item" data-tab="matrix" onclick="switchTab('matrix')">
-        <span class="ni-icon">⊞</span><span class="ni-label">Matrix</span>
+      <div class="nav-item" data-tab="focus" onclick="switchTab('focus')">
+        <span class="ni-icon">★</span><span class="ni-label">Fokus</span>
       </div>
-      <div class="nav-item" data-tab="impact" onclick="switchTab('impact')">
-        <span class="ni-icon">★</span><span class="ni-label">Impact</span>
-      </div>
-      <div class="nav-item" data-tab="log" onclick="switchTab('log')">
-        <span class="ni-icon">📋</span><span class="ni-label">Protokoll</span>
+      <div class="nav-item" data-tab="calendar" onclick="switchTab('calendar')">
+        <span class="ni-icon">📅</span><span class="ni-label">Kalender</span>
       </div>
       <div class="nav-item" data-tab="deepwork" onclick="switchTab('deepwork')">
         <span class="ni-icon">🎯</span><span class="ni-label">Deep Work</span>
       </div>
-      <div class="nav-item" data-tab="calendar" onclick="switchTab('calendar')">
-        <span class="ni-icon">📅</span><span class="ni-label">Kalender</span>
+      <div class="nav-item" data-tab="log" onclick="switchTab('log')">
+        <span class="ni-icon">📋</span><span class="ni-label">Protokoll</span>
       </div>
     </div>
   </nav>
@@ -768,6 +771,7 @@ input[type=number] { max-width: 80px; text-align: center; }
         <div class="stat-box"><div class="stat-num" id="stat-high-impact">0</div><div class="stat-lbl">★★★★★</div></div>
         <div class="stat-box"><div class="stat-num" id="stat-total">0</div><div class="stat-lbl">Gesamt offen</div></div>
       </div>
+      <div id="subnav"></div>
       <div id="task-list"></div>
     </div>
   </main>
@@ -1214,6 +1218,8 @@ let tasks    = load();
 let projects = loadProjects();
 let logEntries = loadLog();
 let currentTab = 'inbox';
+let plannedSub = 'week';   // Sub-Horizont in "Geplant": week|month|later|maybe
+let focusSub = 'frogs';    // Sub-Ansicht in "Fokus": frogs|matrix|impact
 let currentProjectFilter = null;
 let editingId = null;
 let editingProjectId = null;
@@ -1391,6 +1397,9 @@ function updateBadges() {
   });
   const wbadge = document.getElementById('badge-waiting');
   if (wbadge) wbadge.textContent = tasks.filter(t => t.waiting === true).length;
+  const pbadgeEl = document.getElementById('badge-planned');
+  if (pbadgeEl) pbadgeEl.textContent =
+    ['week','month','later','maybe'].reduce((sum, h) => sum + getTabTasks(h).length, 0);
   const overdueCount = tasks.filter(t => !t.waiting && diffDays(t.due) !== null && diffDays(t.due) < 0).length;
   const obadge = document.getElementById('badge-overdue');
   if (obadge) obadge.textContent = overdueCount;
@@ -1417,7 +1426,54 @@ function updateStats() {
   }
 }
 
+// Segment-Umschalter für "Geplant"
+function subnavPlannedHtml() {
+  const segs = [
+    { id: 'week',  label: '📅 Woche' },
+    { id: 'month', label: '🗓 Monat' },
+    { id: 'later', label: '💤 Irgendwann' },
+    { id: 'maybe', label: '🤔 Vielleicht' },
+  ];
+  return `<div class="subnav">` + segs.map(s =>
+    `<div class="subnav-seg ${plannedSub === s.id ? 'active' : ''}" onclick="setPlannedSub('${s.id}')">`
+    + `<span>${s.label}</span><span class="ss-badge">${getTabTasks(s.id).length}</span></div>`
+  ).join('') + `</div>`;
+}
+function setPlannedSub(sub) { plannedSub = sub; renderList(); }
+
+// Segment-Umschalter für "Fokus"
+function subnavFocusHtml() {
+  const frogCount = tasks.filter(t => t.frog === true && !t.waiting).length;
+  const segs = [
+    { id: 'frogs',  label: '🐸 Frösche', badge: frogCount },
+    { id: 'matrix', label: '⊞ Matrix' },
+    { id: 'impact', label: '★ Impact' },
+  ];
+  return `<div class="subnav">` + segs.map(s =>
+    `<div class="subnav-seg ${focusSub === s.id ? 'active' : ''}" onclick="setFocusSub('${s.id}')">`
+    + `<span>${s.label}</span>${s.badge != null ? `<span class="ss-badge">${s.badge}</span>` : ''}</div>`
+  ).join('') + `</div>`;
+}
+function setFocusSub(sub) { focusSub = sub; renderList(); }
+
 function renderList() {
+  const subnav = document.getElementById('subnav');
+  // Sammel-Ansicht "Geplant": Sub-Horizont über Segment-Umschalter
+  if (currentTab === 'planned') {
+    if (subnav) subnav.innerHTML = subnavPlannedHtml();
+    renderHorizonInto(plannedSub);
+    return;
+  }
+  // Sammel-Ansicht "Fokus": Frösche/Matrix/Impact über Segment-Umschalter
+  if (currentTab === 'focus') {
+    if (subnav) subnav.innerHTML = subnavFocusHtml();
+    if (focusSub === 'matrix') renderMatrixTab();
+    else if (focusSub === 'impact') renderImpactTab();
+    else renderFrogsTab();
+    return;
+  }
+  if (subnav) subnav.innerHTML = '';
+
   if (currentTab === 'projects') { renderProjectsTab(); return; }
   if (currentTab === 'waiting') { renderWaitingTab(); return; }
   if (currentTab === 'matrix') { renderMatrixTab(); return; }
@@ -1427,13 +1483,17 @@ function renderList() {
   if (currentTab === 'log') { renderLogTab(); return; }
   if (currentTab === 'deepwork') { renderDeepWorkTab(); return; }
   if (currentTab === 'calendar') { renderCalendarTab(); return; }
+  renderHorizonInto(currentTab);
+}
+
+function renderHorizonInto(tab) {
   const list = document.getElementById('task-list');
-  const tabTasks = getTabTasks(currentTab);
+  const tabTasks = getTabTasks(tab);
 
   if (tabTasks.length === 0) {
     list.innerHTML = `<div class="empty">
-      <div class="empty-icon">${currentTab === 'inbox' ? '📭' : '✨'}</div>
-      <div class="empty-text">${currentTab === 'inbox' ? 'Eingang leer – gut so.' : 'Keine Aufgaben hier.'}</div>
+      <div class="empty-icon">${tab === 'inbox' ? '📭' : '✨'}</div>
+      <div class="empty-text">${tab === 'inbox' ? 'Eingang leer – gut so.' : 'Keine Aufgaben hier.'}</div>
     </div>`;
     return;
   }
@@ -1443,11 +1503,11 @@ function renderList() {
   // Group by project if multiple tasks share one
   let html = '';
 
-  if (currentTab === 'inbox') {
+  if (tab === 'inbox') {
     // Inbox = nur Aufgaben ohne Horizont
     html += `<div class="section-header"><span class="section-label">Zu sortieren</span><div class="section-line"></div></div>`;
     sorted.forEach(t => { html += taskCard(t); });
-  } else if (currentTab === 'recurring') {
+  } else if (tab === 'recurring') {
     // Wiederkehrende Aufgaben: primär nach Uhrzeit sortieren, dann alphabetisch
     const recurSorted = [...sorted].sort((a, b) => {
       const tA = a.due_time || '99:99';

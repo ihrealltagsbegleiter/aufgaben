@@ -2422,7 +2422,11 @@ async function aiBreakdown(taskId, ev) {
 
 // ── SHARE-TARGET & APP-SHORTCUTS (reibungsloses Erfassen aus jeder App) ──
 function handleLaunchParams(search) {
-  const p = new URLSearchParams(typeof search === 'string' ? search : location.search);
+  let q = typeof search === 'string' ? search : location.search;
+  if (!q) {
+    try { q = sessionStorage.getItem('iab_launch_params') || ''; sessionStorage.removeItem('iab_launch_params'); } catch (e) {}
+  }
+  const p = new URLSearchParams(q);
   const shared = [p.get('share-title'), p.get('share-text'), p.get('share-url')].filter(Boolean).join(' ').trim();
   const wantNew = p.get('action') === 'new';
   if (!shared && !wantNew) return false;
@@ -4658,8 +4662,13 @@ async function authLaunchApp(sess) {
   currentUser = sess.user || sess;
   // SB_HEADERS mit Auth-Token überschreiben
   Object.assign(SB_HEADERS, authGetHeaders(sess));
-  document.getElementById('auth-screen').classList.add('hidden');
+  // BUGFIX 06/2026: startup() setzt display:flex als Inline-Style; die Klasse
+  // .hidden allein kann das nicht überstimmen → Inline-Style explizit löschen.
+  const as = document.getElementById('auth-screen');
+  as.classList.add('hidden');
+  as.style.display = 'none';
   await init();
+  handleLaunchParams(); // Shortcut/Teilen-Parameter auch nach frischem Login anwenden
 }
 
 function authSignOut() {
@@ -4672,8 +4681,9 @@ function authSignOut() {
   const sess = await authGetSession();
   if (sess && sess.access_token) {
     await authLaunchApp(sess);
-    handleLaunchParams();
   } else {
+    // Launch-Parameter (App-Shortcut, Teilen) über den Login retten
+    try { if (location.search) sessionStorage.setItem('iab_launch_params', location.search); } catch (e) {}
     // Auth-Screen anzeigen, Enter-Key support
     document.getElementById('auth-screen').style.display = 'flex';
     document.getElementById('auth-pw').addEventListener('keydown', e => {

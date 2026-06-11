@@ -168,7 +168,7 @@ body {
 
 /* ── STATS ── */
 .stats-bar {
-  display: grid; grid-template-columns: repeat(4,1fr);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 6px; margin-bottom: 16px;
 }
 .stat-box {
@@ -763,6 +763,24 @@ input[type=number] { max-width: 80px; text-align: center; }
 .auth-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 .auth-error { font-size: 0.78rem; color: var(--danger); text-align: center; min-height: 18px; }
 .auth-hint { font-size: 0.7rem; color: var(--muted); text-align: center; margin-top: 8px; }
+/* ── Subtasks (Aufgaben-Zerlegung) ── */
+.st-progress { display:flex; align-items:center; gap:8px; margin-top:6px; }
+.st-bar { flex:1; height:5px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden; }
+.st-bar-fill { height:100%; border-radius:3px; background:var(--accent); transition:width 0.3s; }
+.st-count { font-size:0.72rem; color:var(--muted); white-space:nowrap; }
+.st-list { display:flex; flex-direction:column; gap:4px; width:100%; }
+.st-item { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:7px; background:rgba(255,255,255,0.04); }
+.st-item.done .st-title { text-decoration:line-through; opacity:0.5; }
+.st-chk { width:17px; height:17px; min-width:17px; border:1.5px solid var(--muted); border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:10px; color:#0d1117; }
+.st-item.done .st-chk { background:var(--accent); border-color:var(--accent); }
+.st-title { flex:1; font-size:0.82rem; }
+.st-del { opacity:0.4; cursor:pointer; font-size:0.8rem; padding:2px 5px; }
+.st-del:hover { opacity:1; color:var(--danger); }
+.st-add-row { display:flex; gap:6px; margin-top:6px; width:100%; }
+.st-add-input { flex:1; min-width:0; background:var(--surface2); border:1px solid var(--border2); border-radius:7px; padding:6px 10px; color:var(--text); font-size:0.82rem; }
+.st-add-input:focus { outline:none; border-color:var(--accent); }
+/* ── Confetti (Belohnung) ── */
+.cf-p { position:fixed; width:8px; height:8px; pointer-events:none; z-index:9999; border-radius:2px; will-change:transform,opacity; }
 </style>
 </head>
 <body>
@@ -788,6 +806,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <div class="topbar-actions">
     <span id="sync-status"></span>
     <button class="btn-icon" id="sync-btn" onclick="manualSync()" title="Manuell synchronisieren" style="font-size:0.85rem;flex-shrink:0;">🔄</button>
+    <button class="btn-icon" id="notif-btn" onclick="notifToggle()" title="Erinnerungen aktivieren" style="font-size:0.85rem;flex-shrink:0;">🔕</button>
     <button class="btn-icon" onclick="authSignOut()" title="Abmelden" style="font-size:0.9rem;opacity:0.6;">⎋</button>
     <button class="btn-icon" id="search-btn" onclick="openSearch()" title="Suchen (S)">🔍</button>
     <button class="btn-icon" id="filter-btn" onclick="toggleFilterPanel(event)" title="Filtern">⚙</button>
@@ -854,6 +873,8 @@ input[type=number] { max-width: 80px; text-align: center; }
         <div class="stat-box"><div class="stat-num" id="stat-today-count">0</div><div class="stat-lbl">Heute fällig</div></div>
         <div class="stat-box"><div class="stat-num" id="stat-high-impact">0</div><div class="stat-lbl">★★★★★</div></div>
         <div class="stat-box"><div class="stat-num" id="stat-total">0</div><div class="stat-lbl">Gesamt offen</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-done-today" style="color:var(--accent);">0</div><div class="stat-lbl">✅ Heute</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-streak" style="color:var(--warn);">0</div><div class="stat-lbl">🔥 Serie</div></div>
       </div>
       <div id="subnav"></div>
       <div id="task-list"></div>
@@ -1573,6 +1594,8 @@ function updateStats() {
     document.getElementById('stat-high-impact').textContent =
       nonRecur.filter(t => t.impact === 'high').length;
     document.getElementById('stat-total').textContent = nonRecur.length;
+    document.getElementById('stat-done-today').textContent = doneTodayCount();
+    document.getElementById('stat-streak').textContent = calcStreak();
   } else {
     bar.style.display = 'none';
   }
@@ -1823,6 +1846,9 @@ function taskCard(task, isRecurring = false) {
     <div class="qe-panel${isOpen('note')?' open':''}" id="qep-${tid}-note">
       <textarea class="qe-note-input" onclick="event.stopPropagation()" onchange="qeSetField('${tid}','note',this.value,event)" onblur="qeSetField('${tid}','note',this.value,event)">${noteVal}</textarea>
     </div>
+    <div class="qe-panel open" id="qep-${tid}-subtasks" style="display:block;">
+      ${stPanelHtml(task)}
+    </div>
     <div class="task-actions" style="margin-top:8px;">
       ${waitBtn}
       <button class="task-action-btn" onclick="openEditModal('${tid}',event)">✏️ Bearbeiten</button>
@@ -1840,6 +1866,7 @@ function taskCard(task, isRecurring = false) {
         <div class="task-title" onclick="startInlineEdit('${task.id}',event)">${escHtml(task.title)}</div>
         ${note}
         ${tags ? `<div class="task-meta">${tags}</div>` : ''}
+        ${stProgressHtml(task)}
         ${actions}
       </div>
     </div>
@@ -1963,6 +1990,12 @@ function checkTask(id, e) {
     done[task.id] = todayStr();
     saveDone(done);
     appendLog({ task, type: 'recurring' });
+    // Subtasks für nächsten Durchlauf zurücksetzen
+    if (Array.isArray(task.subtasks) && task.subtasks.length) {
+      task.subtasks.forEach(s => { s.done = false; });
+      save(tasks);
+    }
+    fireConfetti(...cardCenter(id));
     expandedIds.delete(id);
     showToast('✓ Erledigt – erscheint wieder wenn fällig');
     render();
@@ -1981,9 +2014,13 @@ function checkTask(id, e) {
     // Upsert tombstone so all devices know it's deleted, then hard-delete after delay
     sbUpsertTombstone(deletedTask);
     expandedIds.delete(id);
-    showToast(doneTask?.frog ? '🐸 Frosch gegessen!' : '✓ Aufgabe erledigt');
+    const n = doneTodayCount(), strk = calcStreak();
+    showToast(doneTask?.frog
+      ? `🐸 Frosch gegessen!${strk > 1 ? ' 🔥 Serie: ' + strk : ''}`
+      : `✓ Erledigt – Nr. ${n} heute!${strk > 1 ? ' 🔥' + strk : ''}`);
     render();
   };
+  fireConfetti(...cardCenter(id));
   if (card) {
     card.style.transition = 'opacity 0.3s, transform 0.3s';
     card.style.opacity = '0';
@@ -2017,6 +2054,206 @@ function setHorizonDirect(id, horizon, e) {
   const labels = { today: 'Heute', week: 'Diese Woche', month: 'Diesen Monat', later: 'Irgendwann', maybe: 'Vielleicht nie' };
   showToast(`→ ${labels[horizon]}`);
 }
+
+// ── SUBTASKS (Aufgaben-Zerlegung gegen Overwhelm) ──
+function stList(t) { return Array.isArray(t.subtasks) ? t.subtasks : []; }
+
+function stProgressHtml(t) {
+  const st = stList(t);
+  if (!st.length) return '';
+  const done = st.filter(s => s.done).length;
+  const pct = Math.round(done / st.length * 100);
+  return `<div class="st-progress"><div class="st-bar"><div class="st-bar-fill" style="width:${pct}%"></div></div><span class="st-count">🧩 ${done}/${st.length}</span></div>`;
+}
+
+function stPanelHtml(t) {
+  const st = stList(t);
+  const items = st.map(s =>
+    `<div class="st-item${s.done ? ' done' : ''}"><div class="st-chk" onclick="stToggle('${t.id}','${s.id}',event)">${s.done ? '✓' : ''}</div><div class="st-title">${escHtml(s.title)}</div><span class="st-del" onclick="stDelete('${t.id}','${s.id}',event)" title="Schritt löschen">✕</span></div>`
+  ).join('');
+  return `<div class="st-list">${items}</div><div class="st-add-row"><input class="st-add-input" id="st-input-${t.id}" placeholder="🧩 Nächster kleiner Schritt…" onclick="event.stopPropagation()" onkeydown="stKey('${t.id}',event)"/><button class="qe-btn" onclick="stAdd('${t.id}',event)">+ Schritt</button></div>`;
+}
+
+function stAdd(taskId, ev) {
+  if (ev) ev.stopPropagation();
+  const inp = document.getElementById('st-input-' + taskId);
+  const val = (inp ? inp.value : '').trim();
+  if (!val) return;
+  const t = tasks.find(x => x.id === taskId);
+  if (!t) return;
+  if (!Array.isArray(t.subtasks)) t.subtasks = [];
+  t.subtasks.push({ id: 'S' + Date.now() + Math.floor(Math.random() * 1000), title: val, done: false });
+  save(tasks);
+  render();
+  const ni = document.getElementById('st-input-' + taskId);
+  if (ni) ni.focus();
+}
+
+function stKey(taskId, ev) {
+  ev.stopPropagation();
+  if (ev.key === 'Enter') stAdd(taskId);
+}
+
+function stToggle(taskId, subId, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === taskId);
+  if (!t || !Array.isArray(t.subtasks)) return;
+  const s = t.subtasks.find(x => x.id === subId);
+  if (!s) return;
+  s.done = !s.done;
+  save(tasks);
+  if (s.done) {
+    if (t.subtasks.length > 0 && t.subtasks.every(x => x.done)) {
+      fireConfetti(...cardCenter(taskId));
+      showToast('🧩 Alle Schritte geschafft – Aufgabe abhaken?');
+    } else {
+      showToast('✓ Schritt erledigt – weiter so!');
+    }
+  }
+  render();
+}
+
+function stDelete(taskId, subId, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === taskId);
+  if (!t || !Array.isArray(t.subtasks)) return;
+  t.subtasks = t.subtasks.filter(x => x.id !== subId);
+  save(tasks);
+  render();
+}
+
+// ── CONFETTI (sofortige Dopamin-Belohnung) ──
+function cardCenter(id) {
+  const c = document.getElementById('card-' + id);
+  if (!c) return [];
+  const r = c.getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + Math.min(r.height / 2, 40)];
+}
+
+function fireConfetti(x, y) {
+  const cx = (typeof x === 'number') ? x : window.innerWidth / 2;
+  const cy = (typeof y === 'number') ? y : window.innerHeight * 0.35;
+  const colors = ['#39ff14', '#e8c468', '#58a6ff', '#f85149', '#b48ec4', '#3dcfb0'];
+  for (let i = 0; i < 26; i++) {
+    const p = document.createElement('div');
+    p.className = 'cf-p';
+    p.style.background = colors[i % colors.length];
+    p.style.left = cx + 'px';
+    p.style.top = cy + 'px';
+    document.body.appendChild(p);
+    const ang = Math.random() * Math.PI * 2, v = 60 + Math.random() * 160;
+    const dx = Math.cos(ang) * v, dy = Math.sin(ang) * v - 130;
+    if (p.animate) {
+      p.animate([
+        { transform: 'translate(0,0) rotate(0deg)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy + 230}px) rotate(${360 + Math.random() * 360}deg)`, opacity: 0 }
+      ], { duration: 900 + Math.random() * 500, easing: 'cubic-bezier(0.2,0.6,0.4,1)' });
+    }
+    setTimeout(() => p.remove(), 1500);
+  }
+}
+
+// ── STREAK & TAGESZÄHLER (Verstärkung) ──
+function doneTodayCount() {
+  const today = todayStr();
+  return logEntries.filter(e => e.completedAt && localDateStr(new Date(e.completedAt)) === today).length;
+}
+
+function calcStreak() {
+  const days = new Set(
+    logEntries.filter(e => e.completedAt).map(e => localDateStr(new Date(e.completedAt)))
+  );
+  let streak = 0;
+  const d = new Date();
+  if (!days.has(localDateStr(d))) d.setDate(d.getDate() - 1); // heute noch nichts → Serie bis gestern zählt weiter
+  while (days.has(localDateStr(d))) { streak++; d.setDate(d.getDate() - 1); }
+  return streak;
+}
+
+// ── NOTIFICATIONS (gegen Zeitblindheit; aktiv solange App geöffnet) ──
+const NOTIF_PREF_KEY = 'iab_notif_pref_v1';
+const NOTIF_SENT_KEY = 'iab_notif_sent_v1';
+
+function notifPref() { return localStorage.getItem(NOTIF_PREF_KEY) === 'on'; }
+
+function notifUpdateBtn() {
+  const b = document.getElementById('notif-btn');
+  if (!b) return;
+  const on = notifPref() && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  b.textContent = on ? '🔔' : '🔕';
+  b.title = on ? 'Erinnerungen aktiv (Klick: aus)' : 'Erinnerungen aktivieren';
+}
+
+async function notifToggle() {
+  if (typeof Notification === 'undefined') { showToast('⚠️ Browser unterstützt keine Benachrichtigungen'); return; }
+  if (notifPref() && Notification.permission === 'granted') {
+    localStorage.setItem(NOTIF_PREF_KEY, 'off');
+    showToast('🔕 Erinnerungen aus');
+    notifUpdateBtn();
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    localStorage.setItem(NOTIF_PREF_KEY, 'on');
+    showToast('🔔 Erinnerungen aktiv – solange die App geöffnet ist');
+    notifShow('🔔 Erinnerungen aktiv', 'Du bekommst Hinweise bei fälligen Aufgaben mit Uhrzeit und bei Überfälligem.');
+    notifTick();
+  } else {
+    showToast('⚠️ Vom Browser blockiert – in den Browser-Einstellungen erlauben');
+  }
+  notifUpdateBtn();
+}
+
+function notifSentMap() {
+  try {
+    const m = JSON.parse(localStorage.getItem(NOTIF_SENT_KEY) || '{}');
+    return (m.date === todayStr() && m.sent) ? m : { date: todayStr(), sent: {} };
+  } catch (e) { return { date: todayStr(), sent: {} }; }
+}
+
+function notifMarkSent(key) {
+  const m = notifSentMap();
+  m.sent[key] = 1;
+  localStorage.setItem(NOTIF_SENT_KEY, JSON.stringify(m));
+}
+
+async function notifShow(title, body) {
+  try {
+    if (navigator.serviceWorker) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) {
+        reg.showNotification(title, { body, icon: 'icon-192.png', badge: 'icon-192.png' });
+        return;
+      }
+    }
+  } catch (e) {}
+  try { new Notification(title, { body, icon: 'icon-192.png' }); } catch (e) {}
+}
+
+function notifTick() {
+  if (!notifPref() || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const sent = notifSentMap().sent;
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  // 1) Heute fällige Aufgaben mit Uhrzeit → Erinnerung zum Zeitpunkt
+  tasks.filter(t => !t.waiting && t.due === todayStr() && t.due_time).forEach(t => {
+    const key = 'due-' + t.id;
+    if (sent[key]) return;
+    if (t.due_time <= hhmm) {
+      notifShow('⏰ Jetzt fällig: ' + t.title, 'Geplant für ' + t.due_time + ' Uhr');
+      notifMarkSent(key);
+    }
+  });
+  // 2) Überfällig-Digest: 1× täglich ab 9 Uhr, sanft formuliert
+  const od = tasks.filter(t => !t.waiting && (!t.recurring || t.recurring === 'none') && diffDays(t.due) !== null && diffDays(t.due) < 0).length;
+  if (od > 0 && !sent['overdue-digest'] && now.getHours() >= 9) {
+    notifShow('📋 ' + od + ' überfällige Aufgabe' + (od > 1 ? 'n' : ''), 'Kein Stress – nimm dir nur die kleinste zuerst vor.');
+    notifMarkSent('overdue-digest');
+  }
+}
+setInterval(notifTick, 60000);
+setTimeout(notifTick, 4000);
+notifUpdateBtn();
 
 // ── TABS ──
 function switchTab(tab) {

@@ -907,6 +907,12 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 /* ── Prokrastinations-Bewusstheit ── */
 .pa-ask { font-size: 0.85rem; color: var(--text); background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r); padding: 10px 12px; line-height: 1.4; }
 .pa-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* ── Die Weiche (Frosch-Streifen in der Schnellerfassung) ── */
+.pa-strip-inner { display: flex; align-items: center; gap: 10px; background: var(--warn-bg); border: 1px solid var(--warn); border-radius: var(--r); padding: 9px 11px; margin-bottom: 12px; }
+.pa-strip-text { flex: 1; min-width: 0; font-size: 0.82rem; color: var(--text); line-height: 1.35; }
+.pa-strip-text b { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.pa-strip-step { font-size: 0.74rem; color: var(--muted); }
+.pa-five { flex-shrink: 0; border-color: var(--accent); color: var(--accent); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1919,6 +1925,9 @@ function taskCard(task, isRecurring = false) {
   if (task.started) {
     tags += `<span class="tag" style="color:var(--warn);border-color:var(--warn);background:var(--warn-bg);">⏯ Angefangen</span>`;
   }
+  if (task.avoidance) {
+    tags += `<span class="tag tag-clickable" style="color:var(--muted);border-style:dashed;" onclick="paToggleAvoidance('${task.id}',event)" title="Bewusst erkanntes Ausweichen – Tipp entfernt die Markierung">🙈 Ausweichen</span>`;
+  }
   if (task.frog) {
     const dreadEmoji = ['','😊','🙂','😐','😟','😰'][task.dread || 3];
     tags += `<span class="tag tag-frog">🐸 Frosch ${dreadEmoji}</span>`;
@@ -2220,7 +2229,9 @@ function checkTask(id, e) {
       }
     }
     let frogNudge = '';
-    if (!doneTask?.frog && paFrogOpen() && n >= 3) {
+    if (doneTask?.avoidance && paFrogOpen()) {
+      frogNudge = ' · Deal einlösen: 🐸 5 Min jetzt?';
+    } else if (!doneTask?.frog && paFrogOpen() && n >= 3) {
       try {
         const fn = JSON.parse(localStorage.getItem('iab_frognudge_v1') || '{}');
         const cnt = fn.date === todayStr() ? (fn.count || 0) : 0;
@@ -2745,12 +2756,12 @@ const TT_CIRC = 119.4;
 let ttState = { taskId: null, title: '', totalSec: 0, startedAt: null, interval: null, alerted: false };
 let wipExpanded = false;
 
-function ttStart(taskId, ev) {
+function ttStart(taskId, ev, minutesOverride) {
   if (ev) ev.stopPropagation();
   const t = tasks.find(x => x.id === taskId);
   if (!t) return;
   if (ttState.taskId) ttStop(true); // laufenden Timer sauber beenden, Zeit sichern
-  const mins = TT_EFFORT_MIN[t.effort] || 25;
+  const mins = minutesOverride || TT_EFFORT_MIN[t.effort] || 25;
   ttState = { taskId, title: t.title, totalSec: mins * 60, startedAt: Date.now(), interval: null, alerted: false };
   document.getElementById('tt-title').textContent = t.title;
   document.getElementById('tt-float').style.display = 'flex';
@@ -3482,6 +3493,7 @@ function openQuick() {
   if (_qpv) _qpv.innerHTML = '';
   setQuickImpact(3);
   attachQuickListener();
+  paRenderStrip();
   setTimeout(() => document.getElementById('quick-input').focus(), 180);
 }
 
@@ -3772,6 +3784,72 @@ function logUnplanned() {
 
 function paFrogOpen() {
   return tasks.some(t => t.frog && !t.waiting);
+}
+
+// Dringendster Frosch: überfällig vor fällig vor Rest, dann höchster Dread
+function paTopFrog() {
+  const frogs = tasks.filter(t => t.frog && !t.waiting);
+  if (!frogs.length) return null;
+  return frogs.sort((a, b) => {
+    const da = diffDays(a.due), db = diffDays(b.due);
+    const ra = da === null ? 9999 : da, rb = db === null ? 9999 : db;
+    if (ra !== rb) return ra - rb;
+    return (b.dread || 0) - (a.dread || 0);
+  })[0];
+}
+
+// "Die Weiche": Frosch-Alternative sichtbar, BEVOR die Ausweich-Aufgabe getippt ist
+function paRenderStrip() {
+  const strip = document.getElementById('pa-strip');
+  const avoidBtn = document.getElementById('pa-avoid-btn');
+  const frog = paTopFrog();
+  if (avoidBtn) avoidBtn.style.display = frog ? '' : 'none';
+  if (!strip) return;
+  if (!frog) { strip.innerHTML = ''; return; }
+  const nextStep = stList(frog).find(s => !s.done);
+  const stepLine = nextStep
+    ? `Kleinster Schritt: „${escHtml(nextStep.title)}“`
+    : 'Noch keine Schritte – 🧩 Zerlegen hilft beim Start';
+  strip.innerHTML = `<div class="pa-strip-inner">
+    <div class="pa-strip-text">🐸 <b>${escHtml(frog.title)}</b> wartet<br><span class="pa-strip-step">${stepLine}</span></div>
+    <button class="qe-btn pa-five" onclick="paFiveMin('${frog.id}',event)">⏱ Nur 5 Min</button>
+  </div>`;
+}
+
+// Mini-Commitment: 5-Minuten-Timer auf den Frosch – kleiner als jede Ausrede
+function paFiveMin(frogId, ev) {
+  if (ev) ev.stopPropagation();
+  closeQuick();
+  ttStart(frogId, null, 5);
+}
+
+// Bewusstes Ausweichen: ehrlich markiert, mit Deal statt Urteil
+function saveAvoidanceTask() {
+  const raw = qcReadAndReset('⚠️ Erst kurz tippen, was du stattdessen machst');
+  if (!raw) return;
+  const p = parseQuickInput(raw);
+  tasks.push({
+    id: 'T' + Date.now(), title: p.title || raw, note: null,
+    horizon: 'today', due: p.due, due_time: p.due_time,
+    impact: p.impact != null ? p.impact : quickImpact, eisen: null,
+    context: p.context, effort: null, energy: null, projectId: p.projectId,
+    frog: false, dread: null, recurring: 'none', recurDays: null,
+    waiting: false, avoidance: true, created: todayStr(),
+  });
+  save(tasks);
+  qcConfirmInput();
+  render();
+  showToast('🙈 Ehrlich notiert – Deal: danach ein Frosch-Schritt?');
+}
+
+function paToggleAvoidance(id, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  t.avoidance = !t.avoidance;
+  save(tasks);
+  render();
+  showToast(t.avoidance ? '🙈 Als Ausweichen markiert' : '✓ Markierung entfernt');
 }
 
 function paAnswer(entryId, avoided, ev) {
@@ -4205,6 +4283,7 @@ function appendLog({ task, type }) {
     frog:        task.frog || false,
     effort:      task.effort || null,
     timeSpent:   task.timeSpent || null,
+    avoidedFrog: task.avoidance === true ? true : undefined,
     type,
     completedAt: new Date().toISOString(),
   };
@@ -5194,6 +5273,7 @@ function authSignOut() {
 
 <div class="quick-overlay" id="quick-overlay" onclick="handleQuickOverlayClick(event)">
   <div class="quick-box" onclick="event.stopPropagation()">
+    <div id="pa-strip"></div>
     <div class="quick-label">⚡ Schnellerfassung → Eingang</div>
     <input
       type="text"
@@ -5220,6 +5300,7 @@ function authSignOut() {
     <div class="quick-alt-row">
       <button class="quick-alt-btn" id="quick-done-btn" onclick="logUnplanned()" title="War nicht geplant, ist aber erledigt – sichtbar machen">⚡ Schon erledigt</button>
       <button class="quick-alt-btn" id="quick-started-btn" onclick="saveStartedTask()" title="Angefangen, aber noch offen – als offene Schleife notieren">⏯ Angefangen</button>
+      <button class="quick-alt-btn" id="pa-avoid-btn" onclick="saveAvoidanceTask()" style="display:none;border-color:var(--warn);" title="Ehrlich: Das hier mache ich statt des Frosches">🙈 Bewusst ausweichen</button>
     </div>
     <div class="quick-hint">
       <span><kbd>Enter</kbd> speichern &nbsp;·&nbsp; <kbd>Esc</kbd> schließen</span>

@@ -857,6 +857,13 @@ input[type=number] { max-width: 80px; text-align: center; }
 .focus-mode .st-bar { height: 4px; }
 .focus-mode .task-expand-btn { width: 24px; height: 22px; }
 .focus-mode .section-header { margin: 10px 0 4px; }
+/* ── Fortschritt in der Titelzeile ── */
+.task-title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.task-title-row .task-title { flex: 1; min-width: 0; }
+.st-progress.st-inline { margin-top: 0; flex-shrink: 0; gap: 5px; }
+.st-progress.st-inline .st-bar { flex: none; width: 44px; }
+.st-progress.st-inline .st-count { font-size: 0.68rem; }
+.focus-mode .st-progress.st-inline .st-bar { width: 36px; }
 </style>
 </head>
 <body>
@@ -1987,10 +1994,12 @@ function taskCard(task, isRecurring = false) {
       <div class="task-check ${''}" onclick="checkTask('${task.id}',event)"></div>
       <div class="task-expand-btn" onclick="forceExpand('${task.id}',event)" title="${expanded ? 'Details zuklappen' : 'Details aufklappen'}">${expanded ? '▾' : '▸'}</div>
       <div class="task-body">
-        <div class="task-title" onclick="startInlineEdit('${task.id}',event)">${escHtml(task.title)}</div>
+        <div class="task-title-row">
+          <div class="task-title" onclick="startInlineEdit('${task.id}',event)">${escHtml(task.title)}</div>
+          ${stProgressHtml(task)}
+        </div>
         ${note}
         ${tags ? `<div class="task-meta">${tags}</div>` : ''}
-        ${stProgressHtml(task)}
         ${actions}
       </div>
     </div>
@@ -2209,7 +2218,7 @@ function stProgressHtml(t) {
   if (!st.length) return '';
   const done = st.filter(s => s.done).length;
   const pct = Math.round(done / st.length * 100);
-  return `<div class="st-progress"><div class="st-bar"><div class="st-bar-fill" style="width:${pct}%"></div></div><span class="st-count">🧩 ${done}/${st.length}</span></div>`;
+  return `<div class="st-progress st-inline" title="${done} von ${st.length} Schritten"><div class="st-bar"><div class="st-bar-fill" style="width:${pct}%"></div></div><span class="st-count">${done}/${st.length}</span></div>`;
 }
 
 function stPanelHtml(t) {

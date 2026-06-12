@@ -2624,6 +2624,28 @@ async function notifShow(title, body) {
   try { new Notification(title, { body, icon: 'icon-192.png' }); } catch (e) {}
 }
 
+// ── AUTO-REVIEW: Sonntag ab 18 Uhr einmalig öffnen ──
+const REVIEW_AUTO_KEY = 'iab_review_auto_v1';
+
+function reviewAutoCheck() {
+  const now = new Date();
+  if (now.getDay() !== 0 || now.getHours() < 18) return false;
+  if (localStorage.getItem(REVIEW_AUTO_KEY) === todayStr()) return false;
+  if (!currentUser) return false; // erst nach Login
+  // Nichts unterbrechen: offene Overlays haben Vorrang, nächster Tick versucht es erneut
+  const busy = ['review-overlay', 'modal-overlay', 'quick-overlay'].some(id => {
+    const el = document.getElementById(id);
+    return el && el.classList.contains('open');
+  });
+  if (busy) return false;
+  localStorage.setItem(REVIEW_AUTO_KEY, todayStr());
+  openReviewModal();
+  showToast('🗂 Sonntags-Review – 5 Minuten reichen');
+  return true;
+}
+setInterval(reviewAutoCheck, 60000);
+setTimeout(reviewAutoCheck, 2500);
+
 function notifTick() {
   if (!notifPref() || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
   const sent = notifSentMap().sent;
@@ -2640,6 +2662,11 @@ function notifTick() {
   });
   // 2) Überfällig-Digest: 1× täglich ab 9 Uhr, sanft formuliert
   const od = tasks.filter(t => !t.waiting && (!t.recurring || t.recurring === 'none') && diffDays(t.due) !== null && diffDays(t.due) < 0).length;
+  // 2b) Sonntags-Review-Erinnerung ab 18 Uhr
+  if (!sent['weekly-review'] && now.getDay() === 0 && now.getHours() >= 18) {
+    notifShow('🗂 Zeit für den Sonntags-Review', 'Inbox leeren · Horizonte prüfen · System vertrauen. 5 Minuten reichen.');
+    notifMarkSent('weekly-review');
+  }
   // 3) Tagesbericht ab 18 Uhr
   if (!sent['day-report'] && now.getHours() >= 18) {
     const r = dayReportData();

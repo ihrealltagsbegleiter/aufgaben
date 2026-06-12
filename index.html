@@ -864,6 +864,12 @@ input[type=number] { max-width: 80px; text-align: center; }
 .st-progress.st-inline .st-bar { flex: none; width: 44px; }
 .st-progress.st-inline .st-count { font-size: 0.68rem; }
 .focus-mode .st-progress.st-inline .st-bar { width: 36px; }
+/* ── Zen: Menüleisten oben ausblenden ── */
+.zen-mode .topbar { display: none; }
+.zen-mode .sidebar { display: none; }
+.zen-exit { display: none; position: fixed; top: 10px; right: 10px; z-index: 950; width: 38px; height: 38px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border2); color: var(--muted); font-size: 1rem; cursor: pointer; opacity: 0.55; align-items: center; justify-content: center; }
+.zen-mode .zen-exit { display: flex; }
+.zen-exit:hover, .zen-exit:active { opacity: 1; color: var(--text); }
 </style>
 </head>
 <body>
@@ -899,6 +905,8 @@ input[type=number] { max-width: 80px; text-align: center; }
   </div>
 </div>
 
+<button class="zen-exit" id="zen-exit" onclick="toggleZen()" title="Menüleisten einblenden">▦</button>
+
 <!-- Mehr-Menü: selten genutzte Funktionen -->
 <div class="more-menu" id="more-menu" onclick="event.stopPropagation()">
   <button class="more-item" onclick="moreAction(manualSync)">🔄 Synchronisieren</button>
@@ -906,6 +914,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <button class="more-item" onclick="moreAction(function(){switchTab('projects')})">📁 Projekte</button>
   <button class="more-item" onclick="moreAction(function(){switchTab('log')})">📋 Protokoll</button>
   <button class="more-item" id="fontscale-btn" onclick="event.stopPropagation();cycleFontScale()">🔠 Schrift: 130 %</button>
+  <button class="more-item" onclick="moreAction(toggleZen)">🧘 Oben ausblenden</button>
   <div class="more-sep"></div>
   <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
 </div>
@@ -2403,6 +2412,23 @@ function cycleFontScale() {
   showToast('🔠 Aufgaben-Schrift: ' + next + ' %');
 }
 applyFontScale();
+
+// ── ZEN: Menüleisten ausblenden (pro Gerät gespeichert) ──
+const ZEN_KEY = 'iab_zen_v1';
+
+function applyZen() {
+  const on = localStorage.getItem(ZEN_KEY) === 'on';
+  document.body.classList.toggle('zen-mode', on);
+  return on;
+}
+
+function toggleZen() {
+  const on = !(localStorage.getItem(ZEN_KEY) === 'on');
+  localStorage.setItem(ZEN_KEY, on ? 'on' : 'off');
+  applyZen();
+  showToast(on ? '🧘 Menüleisten ausgeblendet – ▦ oben rechts holt sie zurück' : '▦ Menüleisten wieder da');
+}
+applyZen();
 
 // ── MEHR-MENÜ ──
 function toggleMoreMenu(ev) {

@@ -973,6 +973,8 @@ body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
   <button class="more-item" onclick="moreAction(iabExportJson)">⬇️ Export (JSON-Sicherung)</button>
   <button class="more-item" onclick="moreAction(iabExportCsv)">📊 Export (CSV für Excel)</button>
   <button class="more-item" onclick="moreAction(iabImportStart)">⬆️ Import (JSON)</button>
+  <button class="more-item" onclick="moreAction(iabImportCsvStart)">📥 Import (CSV/Excel)</button>
+  <input type="file" id="iab-import-csv" accept=".csv,text/csv" style="display:none;" onchange="iabImportCsvFile(event)"/>
   <input type="file" id="iab-import-file" accept=".json,application/json" style="display:none;" onchange="iabImportFile(event)"/>
   <div class="more-sep"></div>
   <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
@@ -2665,6 +2667,137 @@ function iabImportFile(ev) {
     const r = iabImportApply(data);
     showToast(r.ok
       ? `⬆️ Import: ${r.tasks} neu, ${r.skipped} übersprungen (vorhanden)${r.projects ? ', ' + r.projects + ' Projekte' : ''}${r.log ? ', ' + r.log + ' Protokoll' : ''}`
+      : '⚠️ ' + r.error);
+  };
+  reader.onerror = () => showToast('⚠️ Datei konnte nicht gelesen werden');
+  reader.readAsText(file);
+}
+
+// ── CSV-IMPORT (Excel): neue Aufgaben aus Tabellen laden ──
+// Erwartet die Spalten des CSV-Exports; nur "Titel" ist Pflicht. Trennzeichen ; oder ,
+function iabCsvParse(text) {
+  text = text.replace(/^\ufeff/, '').replace(/\r\n?/g, '\n');
+  const firstLine = text.slice(0, text.indexOf('\n') === -1 ? text.length : text.indexOf('\n'));
+  const sep = (firstLine.match(/;/g) || []).length >= (firstLine.match(/,/g) || []).length ? ';' : ',';
+  const rows = [];
+  let cur = [''], inQ = false, ri = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { cur[cur.length - 1] += '"'; i++; }
+        else inQ = false;
+      } else cur[cur.length - 1] += c;
+    } else if (c === '"') inQ = true;
+    else if (c === sep) cur.push('');
+    else if (c === '\n') { rows.push(cur); cur = ['']; }
+    else cur[cur.length - 1] += c;
+  }
+  if (cur.length > 1 || cur[0] !== '') rows.push(cur);
+  if (!rows.length) return [];
+  const head = rows[0].map(h => h.trim().toLowerCase());
+  return rows.slice(1)
+    .filter(r => r.some(v => v.trim() !== ''))
+    .map(r => { const o = {}; head.forEach((h, i) => o[h] = (r[i] || '').trim()); return o; });
+}
+
+function iabCsvYes(v) { return /^(ja|x|1|true|wahr|yes)$/i.test((v || '').trim()); }
+
+function iabCsvDate(v) {
+  v = (v || '').trim();
+  if (!v) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+  if (m) {
+    const y = m[3].length === 2 ? '20' + m[3] : m[3];
+    return `${y}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+const CSV_HORIZON = { heute: 'today', woche: 'week', monat: 'month', 'später': 'later', spaeter: 'later',
+  vielleicht: 'maybe', eingang: 'inbox', today: 'today', week: 'week', month: 'month', later: 'later', maybe: 'maybe', inbox: 'inbox' };
+const CSV_EFFORT = { s: 's', m: 'm', l: 'l', klein: 's', mittel: 'm', 'groß': 'l', gross: 'l' };
+const CSV_ENERGY = { wenig: 'low', mittel: 'mid', viel: 'high', low: 'low', mid: 'mid', high: 'high' };
+const CSV_RECUR = { 'täglich': 'daily', taeglich: 'daily', 'wöchentlich': 'weekly', woechentlich: 'weekly',
+  monatlich: 'monthly', daily: 'daily', weekly: 'weekly', monthly: 'monthly' };
+
+function iabImportCsvApply(text) {
+  let rows;
+  try { rows = iabCsvParse(text); } catch (e) { return { ok: false, error: 'CSV konnte nicht gelesen werden' }; }
+  if (!rows.length) return { ok: false, error: 'Keine Datenzeilen gefunden' };
+  if (!('titel' in rows[0]) && !('title' in rows[0])) return { ok: false, error: 'Spalte "Titel" fehlt' };
+  let added = 0, skippedEmpty = 0, skippedDup = 0, newProjects = 0;
+  const existingTitles = new Set(tasks.map(t => (t.title || '').toLowerCase().trim()));
+  rows.forEach((r, i) => {
+    const title = (r.titel || r.title || '').trim();
+    if (!title) { skippedEmpty++; return; }
+    if (existingTitles.has(title.toLowerCase())) { skippedDup++; return; }
+    existingTitles.add(title.toLowerCase());
+    let projectId = null;
+    const pname = (r.projekt || r.project || '').trim();
+    if (pname) {
+      let proj = projects.find(p => p.name.toLowerCase() === pname.toLowerCase());
+      if (!proj) {
+        proj = { id: 'P' + Date.now() + '-' + i, name: pname, color: '#3dcfb0', status: 'active' };
+        projects.push(proj);
+        newProjects++;
+      }
+      projectId = proj.id;
+    }
+    const subtasks = (r.schritte || r.steps || '')
+      .split('|').map(s => s.trim()).filter(Boolean)
+      .map((s, j) => {
+        const done = /^\[x\]/i.test(s);
+        return { id: 'cs' + Date.now() + '-' + i + '-' + j, title: s.replace(/^\[[ x]?\]\s*/i, ''), done };
+      });
+    const impact = parseInt(r.impact, 10);
+    const dread = parseInt(r.dread, 10);
+    tasks.push({
+      id: 'T' + Date.now() + '-' + i,
+      title: title.slice(0, 200),
+      note: (r.notiz || r.note || '') || null,
+      horizon: CSV_HORIZON[(r.horizont || r.horizon || '').toLowerCase()] || 'inbox',
+      due: iabCsvDate(r['fällig'] || r.faellig || r.due),
+      due_time: /^\d{1,2}:\d{2}$/.test((r.uhrzeit || '').trim()) ? (r.uhrzeit || '').trim() : null,
+      impact: impact >= 1 && impact <= 5 ? impact : 3,
+      eisen: null,
+      context: (r.kontext || r.context || '') || null,
+      effort: CSV_EFFORT[(r.aufwand || r.effort || '').toLowerCase()] || null,
+      energy: CSV_ENERGY[(r.energie || r.energy || '').toLowerCase()] || null,
+      projectId,
+      frog: iabCsvYes(r.frosch || r.frog),
+      dread: dread >= 1 && dread <= 5 ? dread : null,
+      recurring: CSV_RECUR[(r.wiederholung || r.recurring || '').toLowerCase()] || 'none',
+      recurDays: null,
+      waiting: iabCsvYes(r.warten),
+      started: iabCsvYes(r.angefangen),
+      startedAt: iabCsvYes(r.angefangen) ? new Date().toISOString() : null,
+      avoidance: false,
+      subtasks: subtasks.length ? subtasks : undefined,
+      created: todayStr(),
+    });
+    added++;
+  });
+  save(tasks);
+  if (newProjects) saveProjects(projects);
+  render();
+  return { ok: true, added, skippedEmpty, skippedDup, projects: newProjects };
+}
+
+function iabImportCsvStart() {
+  document.getElementById('iab-import-csv').click();
+}
+
+function iabImportCsvFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const r = iabImportCsvApply(reader.result);
+    showToast(r.ok
+      ? `📥 CSV: ${r.added} Aufgaben neu${r.skippedDup ? ', ' + r.skippedDup + ' Duplikate übersprungen' : ''}${r.projects ? ', ' + r.projects + ' Projekte angelegt' : ''}`
       : '⚠️ ' + r.error);
   };
   reader.onerror = () => showToast('⚠️ Datei konnte nicht gelesen werden');

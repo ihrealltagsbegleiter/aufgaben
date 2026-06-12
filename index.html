@@ -923,6 +923,7 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 .quick-alt-btn.sel { border-color: var(--accent); color: var(--accent); background: rgba(57,255,20,.07); }
 body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
 #pa-avoid-btn.sel { border-color: var(--warn); color: var(--warn); background: var(--warn-bg); }
+.loop-decide { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px 12px; }
 </style>
 </head>
 <body>
@@ -3157,11 +3158,29 @@ pillSetup('recur-pills',   'fRecur',   setRecurPill);
 function openReviewModal() {
   const content = document.getElementById('review-content');
   const overdue = tasks.filter(t => diffDays(t.due) !== null && diffDays(t.due) < 0);
+  const frozen  = tasks.filter(t => t.started && loopAgeDays(t) >= LOOP_REVIEW_DAYS);
   const month   = tasks.filter(t => t.horizon === 'month' && (!t.recurring || t.recurring === 'none') && !t.waiting);
   const maybe   = tasks.filter(t => t.horizon === 'maybe');
   const later   = tasks.filter(t => t.horizon === 'later');
 
   let html = '';
+
+  if (frozen.length) {
+    html += `<div class="section-header"><span class="section-label" style="color:var(--danger)">🧊 Festgefahrene Schleifen (${frozen.length})</span><div class="section-line"></div></div>`;
+    frozen.forEach(t => {
+      html += `<div class="task-card is-started" style="margin-bottom:8px;">
+        <div class="task-top"><div class="task-body">
+          <div class="task-title">${escHtml(t.title)}</div>
+          <div class="loop-age" style="margin-left:0;color:var(--danger);">seit ${loopAgeDays(t)} Tagen offen</div>
+          <div class="task-actions">
+            <button class="task-action-btn" onclick="loopToFrog('${t.id}');openReviewModal()">🐸 Zum Frosch</button>
+            <button class="task-action-btn" onclick="loopPark('${t.id}');openReviewModal()">💤 Parken</button>
+            <button class="task-action-btn del" onclick="loopRelease('${t.id}');openReviewModal()">✂️ Loslassen</button>
+          </div>
+        </div></div>
+      </div>`;
+    });
+  }
 
   if (overdue.length) {
     html += `<div class="section-header"><span class="section-label" style="color:var(--danger)">⚠️ Überfällig (${overdue.length})</span><div class="section-line"></div></div>`;
@@ -3487,6 +3506,64 @@ function unWaitTask(id, e) {
   render();
 }
 
+// ── REIFE-LEITER: festgefahrene Schleifen brauchen eine Entscheidung ──
+const LOOP_STALE_DAYS = 7;   // ab hier: Entscheidungs-Trio
+const LOOP_REVIEW_DAYS = 14; // ab hier: zusätzlich im Sonntags-Review
+
+function loopAgeDays(t) {
+  return t.startedAt ? Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 86400000) : 0;
+}
+
+function loopDecideHtml(t) {
+  return `<div class="loop-decide">
+    <button class="qe-btn" style="border-color:var(--accent);color:var(--accent);" onclick="loopToFrog('${t.id}',event)">🐸 Zum Frosch</button>
+    <button class="qe-btn" onclick="loopPark('${t.id}',event)">💤 Bewusst parken</button>
+    <button class="qe-btn" style="border-color:var(--danger);color:var(--danger);" onclick="loopRelease('${t.id}',event)">✂️ Loslassen</button>
+  </div>`;
+}
+
+function loopToFrog(id, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  t.frog = true;
+  t.dread = t.dread || 4;
+  t.horizon = 'today';
+  save(tasks);
+  render();
+  showToast('🐸 Befördert – Weiche, 5-Min-Brücke und Zerlegen arbeiten jetzt dafür');
+}
+
+function loopPark(id, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  t.started = false;
+  t.startedAt = null;
+  t.horizon = 'later';
+  save(tasks);
+  render();
+  showToast('💤 Bewusst geparkt – steht in Später, ohne Schleifen-Last');
+}
+
+function loopRelease(id, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  if (!confirm(`„${t.title}" endgültig loslassen?\n\nLoslassen ist eine Entscheidung – sie schließt die Schleife genauso wie Erledigen.`)) return;
+  logEntries.push({
+    id: 'L' + Date.now(), taskId: t.id, title: t.title,
+    horizon: t.horizon || null, projectId: t.projectId || null,
+    impact: null, eisen: null, frog: false, effort: null, timeSpent: null,
+    type: 'released', completedAt: new Date().toISOString(),
+  });
+  saveLog(logEntries);
+  tasks = tasks.filter(x => x.id !== id);
+  save(tasks);
+  render();
+  showToast('✂️ Losgelassen – auch das schließt eine Schleife. Gut entschieden.');
+}
+
 // ── SCHLEIFEN: alles Angefangene über alle Horizonte, älteste zuerst ──
 function renderLoopsTab() {
   const list = document.getElementById('task-list');
@@ -3500,8 +3577,19 @@ function renderLoopsTab() {
   const HORIZON_LABELS = { today: '☀️ Heute', week: '📅 Woche', month: '🗓 Monat', later: '🕰 Später', maybe: '🤔 Vielleicht', inbox: '📥 Eingang' };
   const order = ['today', 'week', 'month', 'later', 'maybe', 'inbox'];
   let html = `<div class="tt-insight" style="border-left-color:var(--warn);">⏯ <b>${loops.length} offene Schleife${loops.length > 1 ? 'n' : ''}.</b> Jede gehört irgendwann geschlossen: erledigen, bewusst parken (⏸) – oder loslassen.</div>`;
+  // Festgefahren: braucht eine Entscheidung, keinen neuen Anlauf
+  const stale = loops.filter(t => loopAgeDays(t) >= LOOP_STALE_DAYS);
+  const fresh = loops.filter(t => loopAgeDays(t) < LOOP_STALE_DAYS);
+  if (stale.length) {
+    html += `<div class="section-header"><span class="section-label" style="color:var(--danger);">🧊 Festgefahren – braucht eine Entscheidung (${stale.length})</span><div class="section-line"></div></div>`;
+    stale.forEach(t => {
+      html += taskCard(t);
+      html += `<div class="loop-age" style="color:var(--danger);">seit ${loopAgeDays(t)} Tagen offen – kein neuer Anlauf, eine Entscheidung:</div>`;
+      html += loopDecideHtml(t);
+    });
+  }
   order.forEach(h => {
-    const group = loops.filter(t => (t.horizon || 'inbox') === h);
+    const group = fresh.filter(t => (t.horizon || 'inbox') === h);
     if (!group.length) return;
     html += `<div class="section-header"><span class="section-label" style="color:var(--warn);">${HORIZON_LABELS[h]} (${group.length})</span><div class="section-line"></div></div>`;
     group.forEach(t => {
@@ -5010,7 +5098,7 @@ function renderLogTab() {
       const t = new Date(e.completedAt);
       const timeStr = t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
       const proj = e.projectId ? projects.find(p => p.id === e.projectId) : null;
-      const icon = e.type === 'unplanned' ? '⚡' : e.frog ? '🐸' : e.type === 'recurring' ? '↻' : '✓';
+      const icon = e.type === 'released' ? '✂️' : e.type === 'unplanned' ? '⚡' : e.frog ? '🐸' : e.type === 'recurring' ? '↻' : '✓';
       let metaTags = '';
       if (e.horizon) metaTags += `<span class="tag tag-horizon-${e.horizon}" style="font-size:0.62rem;padding:1px 6px;">${horizonLabels[e.horizon]||''}</span>`;
       if (e.impact)  metaTags += `<span class="tag tag-impact-${parseInt(e.impact)||3}" style="font-size:0.62rem;padding:1px 5px;">${IMPACT_STARS[parseInt(e.impact)]||''}</span>`;

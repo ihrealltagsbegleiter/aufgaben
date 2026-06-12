@@ -870,6 +870,40 @@ input[type=number] { max-width: 80px; text-align: center; }
 .zen-exit { display: none; position: fixed; top: 10px; right: 10px; z-index: 950; width: 38px; height: 38px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border2); color: var(--muted); font-size: 1rem; cursor: pointer; opacity: 0.55; align-items: center; justify-content: center; }
 .zen-mode .zen-exit { display: flex; }
 .zen-exit:hover, .zen-exit:active { opacity: 1; color: var(--text); }
+/* ── White-Mode (Variablen-Override) ── */
+body.light-mode {
+  --bg:        #f6f8fa;
+  --surface:   #ffffff;
+  --surface2:  #f0f2f5;
+  --surface3:  #e8ebef;
+  --border:    #d8dee4;
+  --border2:   #c4ccd4;
+  --text:      #1f2328;
+  --muted:     #57606a;
+  --muted-lt:  #8c959f;
+  --accent:    #1a7f37;
+  --accent-dk: #116329;
+  --accent2:   #0d8a72;
+  --danger:    #cf222e;
+  --danger-bg: rgba(207,34,46,.08);
+  --warn:      #9a6700;
+  --warn-bg:   rgba(154,103,0,.09);
+  --today:     #0969da;
+  --today-bg:  rgba(9,105,218,.07);
+  --sh:        0 4px 16px rgba(140,149,159,.25),0 1px 4px rgba(140,149,159,.15);
+  --sh-sm:     0 1px 4px rgba(140,149,159,.2);
+  color-scheme: light;
+}
+body.light-mode { background: var(--bg); color: var(--text); }
+body.light-mode .topbar { background: var(--surface); }
+body.light-mode .st-bar { background: rgba(0,0,0,.08); }
+body.light-mode .st-item { background: rgba(0,0,0,.04); }
+body.light-mode .nav-item:hover { background: rgba(0,0,0,.05); }
+body.light-mode .nav-item.active { background: rgba(26,127,55,.1); }
+body.light-mode ::selection { background: rgba(26,127,55,.18); }
+body.light-mode .quick-save-btn, body.light-mode .st-chk { color: #ffffff; }
+body.light-mode #tt-ring-fg + * {}
+body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 </style>
 </head>
 <body>
@@ -915,6 +949,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <button class="more-item" onclick="moreAction(function(){switchTab('log')})">📋 Protokoll</button>
   <button class="more-item" id="fontscale-btn" onclick="event.stopPropagation();cycleFontScale()">🔠 Schrift: 130 %</button>
   <button class="more-item" onclick="moreAction(toggleZen)">🧘 Oben ausblenden</button>
+  <button class="more-item" id="theme-btn" onclick="event.stopPropagation();toggleTheme()">☀️ Heller Modus</button>
   <div class="more-sep"></div>
   <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
 </div>
@@ -2412,6 +2447,27 @@ function cycleFontScale() {
   showToast('🔠 Aufgaben-Schrift: ' + next + ' %');
 }
 applyFontScale();
+
+// ── THEME: Dunkel/Hell (pro Gerät gespeichert) ──
+const THEME_KEY = 'iab_theme_v1';
+
+function applyTheme() {
+  const light = localStorage.getItem(THEME_KEY) === 'light';
+  document.body.classList.toggle('light-mode', light);
+  const b = document.getElementById('theme-btn');
+  if (b) b.textContent = light ? '🌙 Dunkler Modus' : '☀️ Heller Modus';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', light ? '#f6f8fa' : '#0d1117');
+  return light;
+}
+
+function toggleTheme() {
+  const light = !(localStorage.getItem(THEME_KEY) === 'light');
+  localStorage.setItem(THEME_KEY, light ? 'light' : 'dark');
+  applyTheme();
+  showToast(light ? '☀️ Heller Modus aktiv' : '🌙 Dunkler Modus aktiv');
+}
+applyTheme();
 
 // ── ZEN: Menüleisten ausblenden (pro Gerät gespeichert) ──
 const ZEN_KEY = 'iab_zen_v1';

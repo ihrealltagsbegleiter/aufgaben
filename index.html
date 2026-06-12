@@ -953,6 +953,7 @@ body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
     <span class="filter-active-bar" id="filter-active-bar" onclick="clearAllFilters()">× Filter</span>
     <button class="btn-icon" id="sort-btn" onclick="toggleSortMenu(event)" title="Sortieren"><span id="sort-btn-label">↕</span></button>
     <button class="btn-icon" id="focus-btn" onclick="toggleFocusMode()" title="Fokus-Modus">◎</button>
+    <button class="btn-icon" id="dw-top-btn" onclick="switchTab('deepwork')" title="Deep Work">🎯</button>
     <button class="btn-icon" onclick="openReviewModal()" title="Review">↻</button>
     <button class="btn-icon" id="more-btn" onclick="toggleMoreMenu(event)" title="Mehr">⋯</button>
     <button class="btn-icon btn-primary" id="main-add-btn" onclick="openAddModal()">+ Neu</button>
@@ -1021,7 +1022,7 @@ body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
       <div class="nav-item" data-tab="calendar" onclick="switchTab('calendar')">
         <span class="ni-icon">📅</span><span class="ni-label">Kalender</span>
       </div>
-      <div class="nav-item" data-tab="deepwork" onclick="switchTab('deepwork')">
+      <div class="nav-item" data-tab="deepwork" onclick="switchTab('deepwork')" style="display:none;">
         <span class="ni-icon">🎯</span><span class="ni-label">Deep Work</span>
       </div>
       <div class="nav-item" data-tab="log" onclick="switchTab('log')" style="display:none;">

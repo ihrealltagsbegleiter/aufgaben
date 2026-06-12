@@ -920,6 +920,9 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 .task-card.is-started { border-left: 3px solid var(--warn); background: linear-gradient(90deg, var(--warn-bg) 0%, transparent 45%); }
 .loop-age { font-size: 0.68rem; color: var(--muted-lt); margin: -2px 0 6px 12px; }
 .st-title { cursor: text; }
+.quick-alt-btn.sel { border-color: var(--accent); color: var(--accent); background: rgba(57,255,20,.07); }
+body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
+#pa-avoid-btn.sel { border-color: var(--warn); color: var(--warn); background: var(--warn-bg); }
 </style>
 </head>
 <body>
@@ -3609,6 +3612,7 @@ function openQuick() {
   if (_qpv) _qpv.innerHTML = '';
   setQuickImpact(3);
   attachQuickListener();
+  setQuickMode('capture');
   paRenderStrip();
   setTimeout(() => document.getElementById('quick-input').focus(), 180);
 }
@@ -3794,10 +3798,10 @@ function attachQuickListener() {
   // verhindert der Guard in saveQuickTask ('✓ Gespeichert' / leeres Feld).
   const isEnter = e => e.key === 'Enter' || e.keyCode === 13 || e.which === 13;
   inp.addEventListener('keydown', e => {
-    if (isEnter(e)) { e.preventDefault(); saveQuickTask(); }
+    if (isEnter(e)) { e.preventDefault(); quickSubmit(); }
   });
   inp.addEventListener('keyup', e => {
-    if (isEnter(e)) { e.preventDefault(); saveQuickTask(); }
+    if (isEnter(e)) { e.preventDefault(); quickSubmit(); }
   });
   inp.addEventListener('input', renderQuickPreview);
   quickListenerAttached = true;
@@ -3896,6 +3900,38 @@ function logUnplanned() {
     qcConfirmInput();
   }
   render();
+}
+
+// ── ERFASSUNGS-MODUS: "Nur erfassen" ist Standard, Speichern führt den Modus aus ──
+let quickMode = 'capture';
+const QUICK_MODE_META = {
+  capture: { label: '⚡ Schnellerfassung → Eingang' },
+  done:    { label: '⚡ Schnellerfassung → ✅ Protokoll (schon erledigt)' },
+  started: { label: '⚡ Schnellerfassung → ⏯ Heute (offene Schleife)' },
+  avoid:   { label: '⚡ Schnellerfassung → 🙈 Heute (bewusstes Ausweichen)' },
+};
+
+function setQuickMode(mode, ev) {
+  if (ev) ev.stopPropagation();
+  quickMode = QUICK_MODE_META[mode] ? mode : 'capture';
+  ['capture', 'done', 'started', 'avoid'].forEach(m => {
+    const ids = { capture: 'quick-capture-btn', done: 'quick-done-btn', started: 'quick-started-btn', avoid: 'pa-avoid-btn' };
+    const b = document.getElementById(ids[m]);
+    if (b) b.classList.toggle('sel', m === quickMode);
+  });
+  const lbl = document.getElementById('quick-mode-label');
+  if (lbl) lbl.textContent = QUICK_MODE_META[quickMode].label;
+  const inp = document.getElementById('quick-input');
+  if (inp) inp.focus();
+}
+
+function quickSubmit() {
+  const mode = quickMode;
+  setQuickMode('capture'); // Standard nach jedem Speichern
+  if (mode === 'done') return logUnplanned();
+  if (mode === 'started') return saveStartedTask();
+  if (mode === 'avoid') return saveAvoidanceTask();
+  return saveQuickTask();
 }
 
 function paFrogOpen() {
@@ -5464,7 +5500,7 @@ function authSignOut() {
 <div class="quick-overlay" id="quick-overlay" onclick="handleQuickOverlayClick(event)">
   <div class="quick-box" onclick="event.stopPropagation()">
     <div id="pa-strip"></div>
-    <div class="quick-label">⚡ Schnellerfassung → Eingang</div>
+    <div class="quick-label" id="quick-mode-label">⚡ Schnellerfassung → Eingang</div>
     <input
       type="text"
       class="quick-input"
@@ -5486,12 +5522,13 @@ function authSignOut() {
       <span class="star-label" id="quick-impact-label" style="font-size:0.65rem;">Mittel</span>
     </div>
     <div class="quick-preview" id="quick-preview"></div>
-    <button class="quick-save-btn" id="quick-save-btn" onclick="saveQuickTask()">✓ Speichern</button>
-    <div class="quick-alt-row">
-      <button class="quick-alt-btn" id="quick-done-btn" onclick="logUnplanned()" title="War nicht geplant, ist aber erledigt – sichtbar machen">⚡ Schon erledigt</button>
-      <button class="quick-alt-btn" id="quick-started-btn" onclick="saveStartedTask()" title="Angefangen, aber noch offen – als offene Schleife notieren">⏯ Angefangen</button>
-      <button class="quick-alt-btn" id="pa-avoid-btn" onclick="saveAvoidanceTask()" style="display:none;border-color:var(--warn);" title="Ehrlich: Das hier mache ich statt des Frosches">🙈 Bewusst ausweichen</button>
+    <div class="quick-alt-row" id="quick-mode-row">
+      <button class="quick-alt-btn sel" id="quick-capture-btn" onclick="setQuickMode('capture',event)" title="Als offene Aufgabe in den Eingang">📥 Nur erfassen</button>
+      <button class="quick-alt-btn" id="quick-done-btn" onclick="setQuickMode('done',event)" title="War nicht geplant, ist aber erledigt – sichtbar machen">⚡ Schon erledigt</button>
+      <button class="quick-alt-btn" id="quick-started-btn" onclick="setQuickMode('started',event)" title="Angefangen, aber noch offen – als offene Schleife notieren">⏯ Angefangen</button>
+      <button class="quick-alt-btn" id="pa-avoid-btn" onclick="setQuickMode('avoid',event)" style="display:none;" title="Ehrlich: Das hier mache ich statt des Frosches">🙈 Ausweichen</button>
     </div>
+    <button class="quick-save-btn" id="quick-save-btn" onclick="quickSubmit()">✓ Speichern</button>
     <div class="quick-hint">
       <span><kbd>Enter</kbd> speichern &nbsp;·&nbsp; <kbd>Esc</kbd> schließen</span>
       <span>@kontext · +projekt · ★★★ · !3 · morgen · 14 uhr · 🐸</span>

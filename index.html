@@ -970,6 +970,10 @@ body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
   <button class="more-item" id="fontscale-btn" onclick="event.stopPropagation();cycleFontScale()">🔠 Schrift: 130 %</button>
   <button class="more-item" onclick="moreAction(toggleZen)">🧘 Oben ausblenden</button>
   <button class="more-item" id="theme-btn" onclick="event.stopPropagation();toggleTheme()">☀️ Heller Modus</button>
+  <button class="more-item" onclick="moreAction(iabExportJson)">⬇️ Export (JSON-Sicherung)</button>
+  <button class="more-item" onclick="moreAction(iabExportCsv)">📊 Export (CSV für Excel)</button>
+  <button class="more-item" onclick="moreAction(iabImportStart)">⬆️ Import (JSON)</button>
+  <input type="file" id="iab-import-file" accept=".json,application/json" style="display:none;" onchange="iabImportFile(event)"/>
   <div class="more-sep"></div>
   <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
 </div>
@@ -2576,6 +2580,96 @@ function cycleFontScale() {
   showToast('🔠 Aufgaben-Schrift: ' + next + ' %');
 }
 applyFontScale();
+
+// ── EXPORT / IMPORT ──
+function iabExportPayload() {
+  return {
+    app: 'iab-aufgaben', version: 1, exported: new Date().toISOString(),
+    tasks, projects, log: logEntries,
+  };
+}
+
+function iabDownload(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+function iabExportJson() {
+  const p = iabExportPayload();
+  iabDownload(`aufgaben-export-${todayStr()}.json`, JSON.stringify(p, null, 2));
+  showToast(`⬇️ Export: ${p.tasks.length} Aufgaben, ${p.projects.length} Projekte, ${p.log.length} Protokoll-Einträge`);
+}
+
+function iabCsvString() {
+  const esc = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const head = ['Titel','Horizont','Fällig','Uhrzeit','Impact','Frosch','Dread','Angefangen','Warten','Ausweichen','Projekt','Kontext','Aufwand','Energie','Wiederholung','Notiz','Erstellt','Schritte'];
+  const rows = tasks.map(t => {
+    const proj = projects.find(p => p.id === t.projectId);
+    const steps = (t.subtasks || []).map(s => (s.done ? '[x] ' : '[ ] ') + s.title).join(' | ');
+    return [t.title, t.horizon || '', t.due || '', t.due_time || '', t.impact ?? '', t.frog ? 'ja' : '', t.dread ?? '',
+      t.started ? 'ja' : '', t.waiting ? 'ja' : '', t.avoidance ? 'ja' : '',
+      proj ? proj.name : '', t.context || '', t.effort || '', t.energy || '',
+      t.recurring && t.recurring !== 'none' ? t.recurring : '', t.note || '', t.created || '', steps]
+      .map(esc).join(';');
+  });
+  return '\ufeff' + head.map(esc).join(';') + '\n' + rows.join('\n');
+}
+
+function iabExportCsv() {
+  iabDownload(`aufgaben-${todayStr()}.csv`, iabCsvString(), 'text/csv;charset=utf-8');
+  showToast(`📊 CSV mit ${tasks.length} Aufgaben exportiert`);
+}
+
+function iabImportStart() {
+  document.getElementById('iab-import-file').click();
+}
+
+// Merge nach ID: Vorhandenes bleibt unangetastet, Neues kommt dazu
+function iabImportApply(data) {
+  if (!data || data.app !== 'iab-aufgaben' || !Array.isArray(data.tasks)) {
+    return { ok: false, error: 'Keine gültige Aufgaben-Export-Datei' };
+  }
+  const tIds = new Set(tasks.map(t => t.id));
+  const newTasks = data.tasks.filter(t => t && t.id && t.title && !tIds.has(t.id));
+  newTasks.forEach(t => tasks.push(t));
+  let newProjects = 0;
+  if (Array.isArray(data.projects)) {
+    const pIds = new Set(projects.map(p => p.id));
+    data.projects.filter(p => p && p.id && !pIds.has(p.id)).forEach(p => { projects.push(p); newProjects++; });
+  }
+  let newLog = 0;
+  if (Array.isArray(data.log)) {
+    const lIds = new Set(logEntries.map(e => e.id));
+    data.log.filter(e => e && e.id && !lIds.has(e.id)).forEach(e => { logEntries.push(e); newLog++; });
+  }
+  save(tasks);
+  saveProjects(projects);
+  if (newLog) saveLog(logEntries);
+  render();
+  return { ok: true, tasks: newTasks.length, skipped: data.tasks.length - newTasks.length, projects: newProjects, log: newLog };
+}
+
+function iabImportFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = ''; // gleiche Datei erneut wählbar
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data = null;
+    try { data = JSON.parse(reader.result); } catch (e) {}
+    const r = iabImportApply(data);
+    showToast(r.ok
+      ? `⬆️ Import: ${r.tasks} neu, ${r.skipped} übersprungen (vorhanden)${r.projects ? ', ' + r.projects + ' Projekte' : ''}${r.log ? ', ' + r.log + ' Protokoll' : ''}`
+      : '⚠️ ' + r.error);
+  };
+  reader.onerror = () => showToast('⚠️ Datei konnte nicht gelesen werden');
+  reader.readAsText(file);
+}
 
 // ── THEME: Dunkel/Hell (pro Gerät gespeichert) ──
 const THEME_KEY = 'iab_theme_v1';

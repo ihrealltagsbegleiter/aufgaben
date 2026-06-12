@@ -913,6 +913,9 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 .pa-strip-text b { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .pa-strip-step { font-size: 0.74rem; color: var(--muted); }
 .pa-five { flex-shrink: 0; border-color: var(--accent); color: var(--accent); font-weight: 700; }
+/* ── Action-Toast (Deal/Kette) ── */
+.toast.toast-action { pointer-events: auto; max-width: min(92vw, 360px); line-height: 1.4; border-left-color: var(--warn); }
+.toast-btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -2229,8 +2232,9 @@ function checkTask(id, e) {
       }
     }
     let frogNudge = '';
+    let dealPrompt = false;
     if (doneTask?.avoidance && paFrogOpen()) {
-      frogNudge = ' · Deal einlösen: 🐸 5 Min jetzt?';
+      dealPrompt = true;
     } else if (!doneTask?.frog && paFrogOpen() && n >= 3) {
       try {
         const fn = JSON.parse(localStorage.getItem('iab_frognudge_v1') || '{}');
@@ -2241,7 +2245,16 @@ function checkTask(id, e) {
         }
       } catch (e) {}
     }
-    showToast((doneTask?.frog ? '🐸 Frosch gegessen!' : `✓ Erledigt – Nr. ${n} heute!`) + timeMsg + (strk > 1 ? ' 🔥' + strk : '') + frogNudge);
+    const baseMsg = (doneTask?.frog ? '🐸 Frosch gegessen!' : `✓ Erledigt – Nr. ${n} heute!`) + timeMsg + (strk > 1 ? ' 🔥' + strk : '');
+    if (paCheckChain()) {
+      // Ketten-Intervention hat Vorrang und enthält bereits die Wahlmöglichkeiten
+    } else if (dealPrompt) {
+      const fr = paTopFrog();
+      showActionToast(`${escHtml(baseMsg)} · Deal einlösen?
+        <div class="toast-btns"><button class="qe-btn" onclick="hideToast();paFiveMin('${fr.id}')">⏱ 5 Min Frosch jetzt</button></div>`, 9000);
+    } else {
+      showToast(baseMsg + frogNudge);
+    }
     render();
   };
   fireConfetti(...cardCenter(id));
@@ -3856,9 +3869,11 @@ function paAnswer(entryId, avoided, ev) {
   if (ev) ev.stopPropagation();
   const e = logEntries.find(x => x.id === entryId);
   if (e) { e.avoidedFrog = avoided; saveLog(logEntries); }
-  showToast(avoided
-    ? '🫶 Ehrlich erkannt – das ist schon der halbe Sieg'
-    : '✓ Alles gut – manches muss einfach sein');
+  if (!(avoided && paCheckChain())) {
+    showToast(avoided
+      ? '🫶 Ehrlich erkannt – das ist schon der halbe Sieg'
+      : '✓ Alles gut – manches muss einfach sein');
+  }
   const prev = document.getElementById('quick-preview');
   if (prev) prev.innerHTML = '';
   qcConfirmInput();
@@ -4225,11 +4240,60 @@ function openInlineProjectModal() {
   setTimeout(() => openProjectModal(null), 120);
 }
 
+let toastTimer = null;
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
+  t.classList.remove('toast-action');
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// Toast mit Aktions-Buttons (z. B. Deal einlösen) – bleibt länger stehen
+function showActionToast(html, ms) {
+  const t = document.getElementById('toast');
+  t.innerHTML = html;
+  t.classList.add('show', 'toast-action');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show', 'toast-action'), ms || 9000);
+}
+function hideToast() {
+  const t = document.getElementById('toast');
+  t.classList.remove('show', 'toast-action');
+  clearTimeout(toastTimer);
+}
+
+// ── AUSWEICH-KETTE: 3 ehrliche 🙈 in Folge → sanfte Wahl statt Spirale ──
+function paCheckChain() {
+  const frog = paTopFrog();
+  if (!frog) return false;
+  try {
+    const seen = JSON.parse(localStorage.getItem('iab_chain_v1') || '{}');
+    if (seen.date === todayStr()) return false;
+  } catch (e) {}
+  const todays = logEntries
+    .filter(e => e.completedAt && localDateStr(new Date(e.completedAt)) === todayStr())
+    .sort((a, b) => (a.completedAt || '').localeCompare(b.completedAt || ''));
+  const last3 = todays.slice(-3);
+  if (last3.length < 3 || !last3.every(e => e.avoidedFrog === true)) return false;
+  localStorage.setItem('iab_chain_v1', JSON.stringify({ date: todayStr() }));
+  showActionToast(
+    `3× ausgewichen in Folge – alles okay, dein Kopf schützt dich. Such dir aus:
+     <div class="toast-btns">
+       <button class="qe-btn" onclick="hideToast();paFiveMin('${frog.id}')">⏱ 5 Min Frosch</button>
+       <button class="qe-btn" onclick="paFrogTomorrow('${frog.id}')">📅 Offiziell auf morgen</button>
+     </div>`, 14000);
+  return true;
+}
+
+// Druck rausnehmen: Frosch bewusst auf morgen legen ist eine Entscheidung, kein Versagen
+function paFrogTomorrow(frogId, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === frogId);
+  if (t) { t.due = qcDateStr(1); save(tasks); render(); }
+  hideToast();
+  showToast('📅 Druck raus – der Frosch steht jetzt offiziell morgen');
 }
 
 // ── KEYBOARD ──
@@ -4772,7 +4836,22 @@ function renderLogTab() {
     const unpl = filtered.filter(e => e.type === 'unplanned');
     const avoided = unpl.filter(e => e.avoidedFrog === true).length;
     const honest = unpl.filter(e => e.avoidedFrog !== undefined && e.avoidedFrog !== null).length;
-    paHtml = `<div class="tt-insight" style="border-left-color:var(--warn);">🛡 <b>Dein Muster:</b> Häufigster Schutz vorm Wichtigsten: <b>${top[0]}</b> (${top[1]}× von ${refl.length}).${honest ? ` Von ${honest} ehrlich eingeordneten ⚡-Einträgen waren ${avoided} Ausweichen.` : ''} ${top[0] === 'Zu groß' || top[0] === 'Unklarer Start' ? 'Dein Gegenmittel ist eingebaut: 🧩 Zerlegen.' : top[0] === 'Unterbrechungen' ? 'Probier den 🧘 Zen-Modus + ⏱ Timer.' : ''}</div>`;
+    // Ausweich-Uhrzeit: häufigstes 2-Stunden-Fenster der letzten 14 Tage
+    let timePattern = '';
+    const avTimes = logEntries.filter(e => e.avoidedFrog === true && e.completedAt
+      && (Date.now() - new Date(e.completedAt).getTime()) < 14 * 86400000);
+    if (avTimes.length >= 3) {
+      const buckets = {};
+      avTimes.forEach(e => {
+        const h = new Date(e.completedAt).getHours();
+        const b = h - (h % 2);
+        buckets[b] = (buckets[b] || 0) + 1;
+      });
+      const tb = Object.entries(buckets).sort((a, b) => b[1] - a[1])[0];
+      const bh = parseInt(tb[0], 10);
+      timePattern = ` ⏰ Deine Ausweich-Zeit: meist <b>${bh}–${bh + 2} Uhr</b> – plane den ersten Frosch-Schritt bewusst davor.`;
+    }
+    paHtml = `<div class="tt-insight" style="border-left-color:var(--warn);">🛡 <b>Dein Muster:</b> Häufigster Schutz vorm Wichtigsten: <b>${top[0]}</b> (${top[1]}× von ${refl.length}).${honest ? ` Von ${honest} ehrlich eingeordneten ⚡-Einträgen waren ${avoided} Ausweichen.` : ''} ${top[0] === 'Zu groß' || top[0] === 'Unklarer Start' ? 'Dein Gegenmittel ist eingebaut: 🧩 Zerlegen.' : top[0] === 'Unterbrechungen' ? 'Probier den 🧘 Zen-Modus + ⏱ Timer.' : ''}${timePattern}</div>`;
   }
   let html2 = filterBar + statsHtml + insightHtml + paHtml;
 

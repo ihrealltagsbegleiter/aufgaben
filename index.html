@@ -916,6 +916,9 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 /* ── Action-Toast (Deal/Kette) ── */
 .toast.toast-action { pointer-events: auto; max-width: min(92vw, 360px); line-height: 1.4; border-left-color: var(--warn); }
 .toast-btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+/* ── Angefangen: sichtbar auch im Fokus-Modus (tag-unabhängig) ── */
+.task-card.is-started { border-left: 3px solid var(--warn); background: linear-gradient(90deg, var(--warn-bg) 0%, transparent 45%); }
+.loop-age { font-size: 0.68rem; color: var(--muted-lt); margin: -2px 0 6px 12px; }
 </style>
 </head>
 <body>
@@ -987,6 +990,9 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
       </div>
       <div class="nav-item" data-tab="recurring" onclick="switchTab('recurring')">
         <span class="ni-icon">↻</span><span class="ni-label">Regelmäßig</span><span class="ni-badge" id="badge-recurring">0</span>
+      </div>
+      <div class="nav-item" data-tab="loops" onclick="switchTab('loops')">
+        <span class="ni-icon">⏯</span><span class="ni-label">Schleifen</span><span class="ni-badge" id="badge-loops">0</span>
       </div>
       <div class="nav-item" data-tab="waiting" onclick="switchTab('waiting')">
         <span class="ni-icon">⏳</span><span class="ni-label">Warten</span><span class="ni-badge" id="badge-waiting">0</span>
@@ -1720,6 +1726,12 @@ function updateBadges() {
     if (!el) return;
     el.textContent = getTabTasks(tab).length;
   });
+  const lbadge = document.getElementById('badge-loops');
+  if (lbadge) {
+    const lc = tasks.filter(t => t.started).length;
+    lbadge.textContent = lc;
+    lbadge.style.color = lc > 0 ? 'var(--warn)' : '';
+  }
   const wbadge = document.getElementById('badge-waiting');
   if (wbadge) wbadge.textContent = tasks.filter(t => t.waiting === true).length;
   const pbadgeEl = document.getElementById('badge-planned');
@@ -1809,6 +1821,7 @@ function renderList() {
 
   if (currentTab === 'projects') { renderProjectsTab(); return; }
   if (currentTab === 'waiting') { renderWaitingTab(); return; }
+  if (currentTab === 'loops') { renderLoopsTab(); return; }
   if (currentTab === 'matrix') { renderMatrixTab(); return; }
   if (currentTab === 'overdue') { renderOverdueTab(); return; }
   if (currentTab === 'impact') { renderImpactTab(); return; }
@@ -2047,7 +2060,7 @@ function taskCard(task, isRecurring = false) {
 
   const note = (task.note && expanded) ? `<div class="task-note">${escHtml(task.note)}</div>` : '';
 
-  return `<div class="task-card urgency-${urg}${task.frog ? ' is-frog' : ''}${expanded ? ' expanded' : ''}" id="card-${task.id}" onclick="toggleExpand('${task.id}',event)">
+  return `<div class="task-card urgency-${urg}${task.frog ? ' is-frog' : ''}${task.started ? ' is-started' : ''}${expanded ? ' expanded' : ''}" id="card-${task.id}" onclick="toggleExpand('${task.id}',event)">
     ${task.recurring && task.recurring !== 'none' ? '<div class="recurring-dot"></div>' : ''}
     <div class="task-top">
       <div class="task-check ${''}" onclick="checkTask('${task.id}',event)"></div>
@@ -3434,6 +3447,34 @@ function unWaitTask(id, e) {
   expandedIds.delete(id);
   showToast('▶ Reaktiviert');
   render();
+}
+
+// ── SCHLEIFEN: alles Angefangene über alle Horizonte, älteste zuerst ──
+function renderLoopsTab() {
+  const list = document.getElementById('task-list');
+  document.getElementById('stats-bar').style.display = 'none';
+  const loops = tasks.filter(t => t.started)
+    .sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || ''));
+  if (!loops.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🎉</div><div>Keine offenen Schleifen – alles, was du angefangen hast, ist erledigt oder bewusst geparkt.</div></div>`;
+    return;
+  }
+  const HORIZON_LABELS = { today: '☀️ Heute', week: '📅 Woche', month: '🗓 Monat', later: '🕰 Später', maybe: '🤔 Vielleicht', inbox: '📥 Eingang' };
+  const order = ['today', 'week', 'month', 'later', 'maybe', 'inbox'];
+  let html = `<div class="tt-insight" style="border-left-color:var(--warn);">⏯ <b>${loops.length} offene Schleife${loops.length > 1 ? 'n' : ''}.</b> Jede gehört irgendwann geschlossen: erledigen, bewusst parken (⏸) – oder loslassen.</div>`;
+  order.forEach(h => {
+    const group = loops.filter(t => (t.horizon || 'inbox') === h);
+    if (!group.length) return;
+    html += `<div class="section-header"><span class="section-label" style="color:var(--warn);">${HORIZON_LABELS[h]} (${group.length})</span><div class="section-line"></div></div>`;
+    group.forEach(t => {
+      const days = t.startedAt ? Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 86400000) : null;
+      html += taskCard(t).replace('</div>\n', '</div>\n');
+      if (days !== null && days >= 1) {
+        html += `<div class="loop-age">seit ${days} Tag${days > 1 ? 'en' : ''} offen</div>`;
+      }
+    });
+  });
+  list.innerHTML = html;
 }
 
 function renderWaitingTab() {

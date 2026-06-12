@@ -2414,7 +2414,7 @@ function dayReportData() {
 
 // ── REFLEXION (externalisierend: "Was hat geschützt?", nie "Warum hast du nicht") ──
 const PA_REFLECT_KEY = 'iab_reflect_v1';
-const PA_REASONS = ['Zu groß', 'Unklarer Start', 'Unlust/Angst', 'Unterbrechungen', 'War ok so'];
+const PA_REASONS = ['Zu groß', 'Unklarer Start', 'Energielos', 'Angst', 'Unterbrechungen', 'War ok so'];
 
 function paReflectList() {
   try { return JSON.parse(localStorage.getItem(PA_REFLECT_KEY) || '[]'); } catch (e) { return []; }

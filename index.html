@@ -617,6 +617,9 @@ input[type=number] { max-width: 80px; text-align: center; }
   .nav-item .ni-icon { margin-right: 0; font-size: 1.35rem; width: auto; }
   .nav-item .ni-label { display: block; flex: none; font-size: 0.74rem; letter-spacing: 0.01em; font-weight: 500; }
   .nav-item .ni-badge { position: absolute; top: 2px; right: 4px; font-size: 0.62rem; padding: 0 4px; min-width: 16px; height: 16px; }
+  /* Dropdown-Panels: durch die Buttonverteilung liefen sie links aus dem Bild →
+     auf Mobile volle Breite erzwingen (!important schlägt die per JS gesetzten Inline-Werte) */
+  .filter-panel, .sort-menu { left: 8px !important; right: 8px !important; min-width: 0; max-height: 70dvh; overflow-y: auto; }
   /* Topbar mobil: Titel ausblenden, Buttons über volle Breite verteilen */
   .topbar { height: 52px; padding: 0 8px; }
   .topbar-title { display: none; }
@@ -2136,9 +2139,19 @@ function checkTask(id, e) {
     sbUpsertTombstone(deletedTask);
     expandedIds.delete(id);
     const n = doneTodayCount(), strk = calcStreak();
-    showToast(doneTask?.frog
-      ? `🐸 Frosch gegessen!${strk > 1 ? ' 🔥 Serie: ' + strk : ''}`
-      : `✓ Erledigt – Nr. ${n} heute!${strk > 1 ? ' 🔥' + strk : ''}`);
+    let timeMsg = '';
+    if (doneTask && doneTask.timeSpent) {
+      const plan = doneTask.effort && TT_EFFORT_MIN[doneTask.effort];
+      if (plan) {
+        const diff = Math.round(plan - doneTask.timeSpent);
+        if (diff >= 1) { timeMsg = ` 🚀 ${doneTask.timeSpent} Min – ${diff} unter Plan!`; setTimeout(() => fireConfetti(), 280); }
+        else if (diff <= -1) timeMsg = ` 💪 ${doneTask.timeSpent} Min – durchgezogen!`;
+        else timeMsg = ` ⏱ ${doneTask.timeSpent} Min – Punktlandung!`;
+      } else {
+        timeMsg = ` ⏱ ${doneTask.timeSpent} Min erfasst`;
+      }
+    }
+    showToast((doneTask?.frog ? '🐸 Frosch gegessen!' : `✓ Erledigt – Nr. ${n} heute!`) + timeMsg + (strk > 1 ? ' 🔥' + strk : ''));
     render();
   };
   fireConfetti(...cardCenter(id));
@@ -2559,7 +2572,7 @@ function ttStart(taskId, ev) {
   document.getElementById('tt-float').classList.remove('overtime');
   ttState.interval = setInterval(ttTick, 1000);
   ttTick();
-  showToast(`⏱ ${mins} Min für: ${t.title}`);
+  showToast(`🏁 ${mins} Min – los! Schaffst du es schneller?`);
 }
 
 function ttElapsedSec() {
@@ -2600,6 +2613,18 @@ function ttRecordTime() {
     t.timeSpent = Math.round(((t.timeSpent || 0) + mins) * 10) / 10;
     save(tasks);
   }
+  // Integration Deep Work: fokussierte Timer-Zeit zählt aufs Konto
+  try {
+    dwState.sessions.unshift({
+      id: 'tt' + Date.now(),
+      date: new Date().toISOString(),
+      dur: Math.round(mins * 60),
+      text: '⏱ ' + ttState.title,
+      taskCount: 1,
+      src: 'task-timer',
+    });
+    dwSave();
+  } catch (e) {}
   return mins;
 }
 
@@ -2845,6 +2870,7 @@ pillSetup('recur-pills',   'fRecur',   setRecurPill);
 function openReviewModal() {
   const content = document.getElementById('review-content');
   const overdue = tasks.filter(t => diffDays(t.due) !== null && diffDays(t.due) < 0);
+  const month   = tasks.filter(t => t.horizon === 'month' && (!t.recurring || t.recurring === 'none') && !t.waiting);
   const maybe   = tasks.filter(t => t.horizon === 'maybe');
   const later   = tasks.filter(t => t.horizon === 'later');
 
@@ -2866,15 +2892,15 @@ function openReviewModal() {
     });
   }
 
-  if (maybe.length) {
-    html += `<div class="section-header"><span class="section-label">🤔 Vielleicht nie (${maybe.length})</span><div class="section-line"></div></div>`;
-    maybe.forEach(t => {
+  if (month.length) {
+    html += `<div class="section-header"><span class="section-label">🗓 Diesen Monat (${month.length})</span><div class="section-line"></div></div>`;
+    month.forEach(t => {
       html += `<div class="task-card urgency-ok" style="margin-bottom:8px;">
         <div class="task-top"><div class="task-body">
           <div class="task-title">${escHtml(t.title)}</div>
           <div class="task-actions">
-            <button class="task-action-btn" onclick="reviewActivate('${t.id}')">▶ Aktivieren</button>
-            <button class="task-action-btn del" onclick="reviewDelete('${t.id}')">🗑 Endgültig löschen</button>
+            <button class="task-action-btn" onclick="reviewActivate('${t.id}')">▶ Diese Woche angehen</button>
+            <button class="task-action-btn del" onclick="reviewDelete('${t.id}')">🗑 Löschen</button>
           </div>
         </div></div>
       </div>`;
@@ -2890,6 +2916,21 @@ function openReviewModal() {
           <div class="task-actions">
             <button class="task-action-btn" onclick="reviewActivate('${t.id}')">▶ Diese Woche angehen</button>
             <button class="task-action-btn del" onclick="reviewDelete('${t.id}')">🗑 Löschen</button>
+          </div>
+        </div></div>
+      </div>`;
+    });
+  }
+
+  if (maybe.length) {
+    html += `<div class="section-header"><span class="section-label">🤔 Vielleicht nie (${maybe.length})</span><div class="section-line"></div></div>`;
+    maybe.forEach(t => {
+      html += `<div class="task-card urgency-ok" style="margin-bottom:8px;">
+        <div class="task-top"><div class="task-body">
+          <div class="task-title">${escHtml(t.title)}</div>
+          <div class="task-actions">
+            <button class="task-action-btn" onclick="reviewActivate('${t.id}')">▶ Aktivieren</button>
+            <button class="task-action-btn del" onclick="reviewDelete('${t.id}')">🗑 Endgültig löschen</button>
           </div>
         </div></div>
       </div>`;

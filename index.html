@@ -904,6 +904,9 @@ body.light-mode ::selection { background: rgba(26,127,55,.18); }
 body.light-mode .quick-save-btn, body.light-mode .st-chk { color: #ffffff; }
 body.light-mode #tt-ring-fg + * {}
 body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
+/* ── Prokrastinations-Bewusstheit ── */
+.pa-ask { font-size: 0.85rem; color: var(--text); background: var(--surface2); border: 1px solid var(--border2); border-radius: var(--r); padding: 10px 12px; line-height: 1.4; }
+.pa-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -2216,7 +2219,18 @@ function checkTask(id, e) {
         timeMsg = ` ⏱ ${doneTask.timeSpent} Min erfasst`;
       }
     }
-    showToast((doneTask?.frog ? '🐸 Frosch gegessen!' : `✓ Erledigt – Nr. ${n} heute!`) + timeMsg + (strk > 1 ? ' 🔥' + strk : ''));
+    let frogNudge = '';
+    if (!doneTask?.frog && paFrogOpen() && n >= 3) {
+      try {
+        const fn = JSON.parse(localStorage.getItem('iab_frognudge_v1') || '{}');
+        const cnt = fn.date === todayStr() ? (fn.count || 0) : 0;
+        if (cnt < 2) {
+          frogNudge = ' · 🐸 wartet – ein Mini-Schritt?';
+          localStorage.setItem('iab_frognudge_v1', JSON.stringify({ date: todayStr(), count: cnt + 1 }));
+        }
+      } catch (e) {}
+    }
+    showToast((doneTask?.frog ? '🐸 Frosch gegessen!' : `✓ Erledigt – Nr. ${n} heute!`) + timeMsg + (strk > 1 ? ' 🔥' + strk : '') + frogNudge);
     render();
   };
   fireConfetti(...cardCenter(id));
@@ -2393,7 +2407,35 @@ function dayReportData() {
     unplanned: todays.filter(e => e.type === 'unplanned').length,
     frogs:     todays.filter(e => e.frog).length,
     loops:     tasks.filter(t => t.started && !t.waiting).length,
+    avoided:   todays.filter(e => e.avoidedFrog === true).length,
+    frogOpen:  paFrogOpen(),
   };
+}
+
+// ── REFLEXION (externalisierend: "Was hat geschützt?", nie "Warum hast du nicht") ──
+const PA_REFLECT_KEY = 'iab_reflect_v1';
+const PA_REASONS = ['Zu groß', 'Unklarer Start', 'Unlust/Angst', 'Unterbrechungen', 'War ok so'];
+
+function paReflectList() {
+  try { return JSON.parse(localStorage.getItem(PA_REFLECT_KEY) || '[]'); } catch (e) { return []; }
+}
+
+function paReflect(reason, ev) {
+  if (ev) ev.stopPropagation();
+  const list = paReflectList().filter(r => r.date !== todayStr());
+  list.push({ date: todayStr(), reason });
+  localStorage.setItem(PA_REFLECT_KEY, JSON.stringify(list.slice(-60)));
+  if (reason === 'Zu groß' || reason === 'Unklarer Start') {
+    const frog = tasks.find(t => t.frog && !t.waiting);
+    if (frog) {
+      showToast('🧩 Genau dafür gibt es Zerlegen – ich bring dich hin');
+      localStorage.setItem(DAYREPORT_KEY, todayStr());
+      goToTask(frog.id);
+      return;
+    }
+  }
+  showToast(reason === 'War ok so' ? '✓ Notiert – manche Tage sind so' : '🫶 Erkannt ist halb verändert – notiert');
+  render();
 }
 
 function dayReportHtml() {
@@ -2407,9 +2449,20 @@ function dayReportHtml() {
   const verdict = sum > 0
     ? 'Du hast mehr geschafft, als es sich anfühlt.'
     : 'Heute war Pause – auch das ist okay.';
+  const frogLine = r.frogs
+    ? '🐸 Frosch erledigt – Königsdisziplin!'
+    : r.frogOpen
+      ? '🐸 Der Frosch wartet noch' + (r.avoided ? ` · ${r.avoided}× ehrlich als Ausweichen erkannt` : '')
+      : '';
+  const reflected = paReflectList().some(x => x.date === todayStr());
+  const askLine = (!reflected && (r.frogOpen || r.avoided))
+    ? `<div class="pa-ask" style="margin-top:8px;">Was hat heute vorm Wichtigsten geschützt?
+        <div class="pa-btns">${PA_REASONS.map(x => `<button class="qe-btn" onclick="paReflect('${x}',event)">${x}</button>`).join('')}</div></div>`
+    : '';
   return `<div class="day-report">
     <div class="day-report-title">🌙 Dein Tag in Wahrheit</div>
-    <div class="day-report-body"><b>${r.planned}</b> geplant + <b style="color:var(--warn);">${r.unplanned}</b> ungeplant erledigt${r.frogs ? ' · 🐸 ' + r.frogs : ''}${loopsTxt}<br>${verdict}</div>
+    <div class="day-report-body"><b>${r.planned}</b> geplant + <b style="color:var(--warn);">${r.unplanned}</b> ungeplant erledigt${loopsTxt}${frogLine ? '<br>' + frogLine : ''}<br>${verdict}</div>
+    ${askLine}
     <button class="qe-btn" onclick="dayReportDismiss()" style="margin-top:8px;">Gesehen ✓</button>
   </div>`;
 }
@@ -3696,10 +3749,41 @@ function logUnplanned() {
   });
   saveLog(logEntries);
   fireConfetti();
-  qcConfirmInput();
-  render();
   const n = doneTodayCount(), strk = calcStreak();
   showToast('⚡ Sichtbar gemacht – Nr. ' + n + ' heute!' + (strk > 1 ? ' 🔥' + strk : ''));
+  // Prokrastinations-Bewusstheit im Moment: nur fragen, wenn der Frosch noch wartet
+  const entryId = logEntries[logEntries.length - 1].id;
+  if (paFrogOpen()) {
+    const prev = document.getElementById('quick-preview');
+    const inp = document.getElementById('quick-input');
+    if (inp) { inp.value = ''; }
+    if (prev) {
+      prev.innerHTML = `<div class="pa-ask">Kurz ehrlich: War das Ausweichen vorm 🐸?
+        <div class="pa-btns">
+          <button class="qe-btn" onclick="paAnswer('${entryId}',true,event)">Ja 🙈</button>
+          <button class="qe-btn" onclick="paAnswer('${entryId}',false,event)">Nein, war nötig</button>
+        </div></div>`;
+    }
+  } else {
+    qcConfirmInput();
+  }
+  render();
+}
+
+function paFrogOpen() {
+  return tasks.some(t => t.frog && !t.waiting);
+}
+
+function paAnswer(entryId, avoided, ev) {
+  if (ev) ev.stopPropagation();
+  const e = logEntries.find(x => x.id === entryId);
+  if (e) { e.avoidedFrog = avoided; saveLog(logEntries); }
+  showToast(avoided
+    ? '🫶 Ehrlich erkannt – das ist schon der halbe Sieg'
+    : '✓ Alles gut – manches muss einfach sein');
+  const prev = document.getElementById('quick-preview');
+  if (prev) prev.innerHTML = '';
+  qcConfirmInput();
 }
 
 // "⏯ Angefangen": offene Schleife als Aufgabe mit Started-Markierung →
@@ -4599,7 +4683,19 @@ function renderLogTab() {
     const verdict = pct > 30 ? 'ADHS-typisch – plane bewusst Puffer ein.' : pct < -20 ? 'Du überschätzt eher – trau dich an Größeres.' : 'Gute Kalibrierung – weiter so!';
     insightHtml = `<div class="tt-insight">⏱ <b>Realitäts-Check:</b> Du brauchst im Schnitt <b>${pct >= 0 ? pct + '&nbsp;% länger' : Math.abs(pct) + '&nbsp;% kürzer'}</b> als geschätzt (${measured.length} gemessene Aufgaben). ${verdict}</div>`;
   }
-  let html2 = filterBar + statsHtml + insightHtml;
+  // Prokrastinations-Muster: Erkenntnis statt Anklage
+  let paHtml = '';
+  const refl = paReflectList();
+  if (refl.length >= 3) {
+    const counts = {};
+    refl.forEach(x => counts[x.reason] = (counts[x.reason] || 0) + 1);
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    const unpl = filtered.filter(e => e.type === 'unplanned');
+    const avoided = unpl.filter(e => e.avoidedFrog === true).length;
+    const honest = unpl.filter(e => e.avoidedFrog !== undefined && e.avoidedFrog !== null).length;
+    paHtml = `<div class="tt-insight" style="border-left-color:var(--warn);">🛡 <b>Dein Muster:</b> Häufigster Schutz vorm Wichtigsten: <b>${top[0]}</b> (${top[1]}× von ${refl.length}).${honest ? ` Von ${honest} ehrlich eingeordneten ⚡-Einträgen waren ${avoided} Ausweichen.` : ''} ${top[0] === 'Zu groß' || top[0] === 'Unklarer Start' ? 'Dein Gegenmittel ist eingebaut: 🧩 Zerlegen.' : top[0] === 'Unterbrechungen' ? 'Probier den 🧘 Zen-Modus + ⏱ Timer.' : ''}</div>`;
+  }
+  let html2 = filterBar + statsHtml + insightHtml + paHtml;
 
   Object.entries(byDay).forEach(([day, entries]) => {
     const d = new Date(day + 'T12:00:00');

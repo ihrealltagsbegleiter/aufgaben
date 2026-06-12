@@ -919,6 +919,7 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 /* ── Angefangen: sichtbar auch im Fokus-Modus (tag-unabhängig) ── */
 .task-card.is-started { border-left: 3px solid var(--warn); background: linear-gradient(90deg, var(--warn-bg) 0%, transparent 45%); }
 .loop-age { font-size: 0.68rem; color: var(--muted-lt); margin: -2px 0 6px 12px; }
+.st-title { cursor: text; }
 </style>
 </head>
 <body>
@@ -2319,7 +2320,7 @@ function stProgressHtml(t) {
 function stPanelHtml(t) {
   const st = stList(t);
   const items = st.map(s =>
-    `<div class="st-item${s.done ? ' done' : ''}"><div class="st-chk" onclick="stToggle('${t.id}','${s.id}',event)">${s.done ? '✓' : ''}</div><div class="st-title">${escHtml(s.title)}</div><span class="st-del" onclick="stDelete('${t.id}','${s.id}',event)" title="Schritt löschen">✕</span></div>`
+    `<div class="st-item${s.done ? ' done' : ''}"><div class="st-chk" onclick="stToggle('${t.id}','${s.id}',event)">${s.done ? '✓' : ''}</div><div class="st-title" id="st-title-${s.id}" onclick="stEditStart('${t.id}','${s.id}',event)" title="Tippen zum Bearbeiten">${escHtml(s.title)}</div><span class="st-del" onclick="stDelete('${t.id}','${s.id}',event)" title="Schritt löschen">✕</span></div>`
   ).join('');
   return `<div class="st-list">${items}</div><div class="st-add-row"><input class="st-add-input" id="st-input-${t.id}" placeholder="🧩 Nächster kleiner Schritt…" onclick="event.stopPropagation()" onkeydown="stKey('${t.id}',event)"/><button class="qe-btn" onclick="stAdd('${t.id}',event)">+ Schritt</button></div><div id="ai-area-${t.id}" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">${aiBtnHtml(t)}</div>`;
 }
@@ -2359,6 +2360,40 @@ function stToggle(taskId, subId, ev) {
     } else {
       showToast('✓ Schritt erledigt – weiter so!');
     }
+  }
+  render();
+}
+
+// Einzelschritt nachträglich bearbeiten: Tipp auf den Titel → Inline-Eingabe
+function stEditStart(taskId, subId, ev) {
+  if (ev) ev.stopPropagation();
+  const t = tasks.find(x => x.id === taskId);
+  const s = t && (t.subtasks || []).find(x => x.id === subId);
+  const el = document.getElementById('st-title-' + subId);
+  if (!s || !el || el.querySelector('input')) return;
+  el.innerHTML = `<input class="st-add-input" id="st-edit-${subId}" onclick="event.stopPropagation()" onkeydown="stEditKey('${taskId}','${subId}',event)" onblur="stEditSave('${taskId}','${subId}')"/>`;
+  const inp = document.getElementById('st-edit-' + subId);
+  inp.value = s.title; // per JS gesetzt – kein Attribut-Escaping nötig
+  inp.focus();
+  inp.select();
+}
+
+function stEditKey(taskId, subId, ev) {
+  ev.stopPropagation();
+  if (ev.key === 'Enter') { ev.preventDefault(); stEditSave(taskId, subId); }
+  else if (ev.key === 'Escape') { render(); }
+}
+
+function stEditSave(taskId, subId) {
+  const inp = document.getElementById('st-edit-' + subId);
+  if (!inp) return; // bereits gespeichert/abgebrochen
+  const val = inp.value.trim();
+  const t = tasks.find(x => x.id === taskId);
+  const s = t && (t.subtasks || []).find(x => x.id === subId);
+  if (s && val && val !== s.title) {
+    s.title = val.slice(0, 120);
+    save(tasks);
+    showToast('✓ Schritt aktualisiert');
   }
   render();
 }

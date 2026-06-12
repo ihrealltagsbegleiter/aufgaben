@@ -887,7 +887,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <button class="more-item" id="notif-btn" onclick="moreAction(notifToggle)">🔕 Erinnerungen aus</button>
   <button class="more-item" onclick="moreAction(function(){switchTab('projects')})">📁 Projekte</button>
   <button class="more-item" onclick="moreAction(function(){switchTab('log')})">📋 Protokoll</button>
-  <button class="more-item" id="fontscale-btn" onclick="event.stopPropagation();cycleFontScale()">🔠 Schrift: 100 %</button>
+  <button class="more-item" id="fontscale-btn" onclick="event.stopPropagation();cycleFontScale()">🔠 Schrift: 130 %</button>
   <div class="more-sep"></div>
   <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
 </div>
@@ -2355,14 +2355,21 @@ function dayReportDismiss() {
   render();
 }
 
-// ── SCHRIFTGRÖSSE (100–130 %, pro Gerät gespeichert) ──
+// ── SCHRIFTGRÖSSE (nur Aufgabenbereich, 130–175 %, pro Gerät gespeichert) ──
+// CSS-zoom auf dem Listen-Container: skaliert ausschließlich die Aufgaben,
+// Topbar und Tab-Leiste bleiben unverändert. Alte Werte (<130) migrieren auf 130.
 const FONTSCALE_KEY = 'iab_fontscale_v1';
-const FONTSCALE_STEPS = [100, 110, 120, 130];
+const FONTSCALE_STEPS = [130, 145, 160, 175];
 
 function applyFontScale() {
-  const s = parseInt(localStorage.getItem(FONTSCALE_KEY) || '100', 10);
-  const scale = FONTSCALE_STEPS.includes(s) ? s : 100;
-  document.documentElement.style.fontSize = (16 * scale / 100) + 'px';
+  const s = parseInt(localStorage.getItem(FONTSCALE_KEY) || '130', 10);
+  const scale = FONTSCALE_STEPS.includes(s) ? s : 130;
+  document.documentElement.style.fontSize = ''; // frühere Root-Skalierung zurücknehmen
+  const list = document.getElementById('task-list');
+  if (list) {
+    list.style.zoom = String(scale / 100);
+    list.dataset.fontscale = String(scale);
+  }
   const b = document.getElementById('fontscale-btn');
   if (b) b.textContent = '🔠 Schrift: ' + scale + ' %';
   return scale;
@@ -2373,7 +2380,7 @@ function cycleFontScale() {
   const next = FONTSCALE_STEPS[(FONTSCALE_STEPS.indexOf(cur) + 1) % FONTSCALE_STEPS.length];
   localStorage.setItem(FONTSCALE_KEY, String(next));
   applyFontScale();
-  showToast('🔠 Schriftgröße: ' + next + ' %');
+  showToast('🔠 Aufgaben-Schrift: ' + next + ' %');
 }
 applyFontScale();
 

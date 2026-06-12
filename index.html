@@ -614,10 +614,10 @@ input[type=number] { max-width: 80px; text-align: center; }
   .sidebar-divider { display: none; }
   .sidebar { justify-content: space-between; overflow-x: visible; }
   .sidebar-section { flex: 1; justify-content: space-around; }
-  .nav-item { padding: 7px 2px 5px; white-space: nowrap; flex-direction: column; min-width: 0; flex: 1; min-height: 42px; justify-content: center; position: relative; margin: 0; }
+  .nav-item { padding: 5px 1px 4px; white-space: nowrap; flex-direction: column; gap: 1px; min-width: 0; flex: 1; min-height: 46px; justify-content: center; position: relative; margin: 0; overflow: hidden; }
   .nav-item.active { border: 1px solid rgba(57,255,20,.35); }
-  .nav-item .ni-icon { margin-right: 0; font-size: 1.15rem; width: auto; }
-  .nav-item .ni-label { display: none; }
+  .nav-item .ni-icon { margin-right: 0; font-size: 1.05rem; width: auto; }
+  .nav-item .ni-label { display: block; flex: none; font-size: 0.56rem; letter-spacing: 0; font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .nav-item .ni-badge { position: absolute; top: 0; right: 2px; font-size: 0.56rem; padding: 0 3px; min-width: 13px; height: 13px; line-height: 13px; }
   /* Dropdown-Panels: durch die Buttonverteilung liefen sie links aus dem Bild →
      auf Mobile volle Breite erzwingen (!important schlägt die per JS gesetzten Inline-Werte) */
@@ -926,6 +926,11 @@ body.light-mode .tt-float svg circle:first-child { stroke: rgba(0,0,0,.1); }
 body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
 #pa-avoid-btn.sel { border-color: var(--warn); color: var(--warn); background: var(--warn-bg); }
 .loop-decide { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px 12px; }
+/* ── Review-Filter ── */
+.rv-filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; }
+.rv-filter .qe-btn { opacity: 0.45; }
+.rv-filter .qe-btn.rv-on { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.rv-proj { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); border-radius: var(--r); padding: 5px 8px; font-size: 0.78rem; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -956,7 +961,7 @@ body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
     <button class="btn-icon" id="sort-btn" onclick="toggleSortMenu(event)" title="Sortieren"><span id="sort-btn-label">↕</span></button>
     <button class="btn-icon" id="focus-btn" onclick="toggleFocusMode()" title="Fokus-Modus">◎</button>
     <button class="btn-icon" id="dw-top-btn" onclick="switchTab('deepwork')" title="Deep Work">🎯</button>
-    <button class="btn-icon" onclick="openReviewModal()" title="Review">↻</button>
+    <button class="btn-icon" onclick="reviewOpen()" title="Review">🗂</button>
     <button class="btn-icon" id="more-btn" onclick="toggleMoreMenu(event)" title="Mehr">⋯</button>
     <button class="btn-icon btn-primary" id="main-add-btn" onclick="openAddModal()">+ Neu</button>
   </div>
@@ -2921,7 +2926,7 @@ function reviewAutoCheck() {
   });
   if (busy) return false;
   localStorage.setItem(REVIEW_AUTO_KEY, todayStr());
-  openReviewModal();
+  reviewOpen();
   showToast('🗂 Sonntags-Review – 5 Minuten reichen');
   return true;
 }
@@ -3385,15 +3390,51 @@ pillSetup('energy-pills',  'fEnergy',  setEnergyPill);
 pillSetup('recur-pills',   'fRecur',   setRecurPill);
 
 // ── REVIEW MODAL ──
+// ── REVIEW-FILTER: Sektionen zu-/abschaltbar, optional auf ein Projekt begrenzt ──
+const REVIEW_SECTIONS_ALL = { frozen: 1, overdue: 1, month: 1, later: 1, maybe: 1 };
+let reviewFilter = { sec: { ...REVIEW_SECTIONS_ALL }, projectId: '' };
+
+function reviewOpen() {
+  reviewFilter = { sec: { ...REVIEW_SECTIONS_ALL }, projectId: '' };
+  openReviewModal();
+}
+
+function reviewToggleSec(key, ev) {
+  if (ev) ev.stopPropagation();
+  reviewFilter.sec[key] = reviewFilter.sec[key] ? 0 : 1;
+  openReviewModal();
+}
+
+function reviewSetProject(pid) {
+  reviewFilter.projectId = pid || '';
+  openReviewModal();
+}
+
 function openReviewModal() {
   const content = document.getElementById('review-content');
-  const overdue = tasks.filter(t => diffDays(t.due) !== null && diffDays(t.due) < 0);
-  const frozen  = tasks.filter(t => t.started && loopAgeDays(t) >= LOOP_REVIEW_DAYS);
-  const month   = tasks.filter(t => t.horizon === 'month' && (!t.recurring || t.recurring === 'none') && !t.waiting);
-  const maybe   = tasks.filter(t => t.horizon === 'maybe');
-  const later   = tasks.filter(t => t.horizon === 'later');
+  const pf = t => !reviewFilter.projectId || t.projectId === reviewFilter.projectId;
+  const overdueAll = tasks.filter(t => diffDays(t.due) !== null && diffDays(t.due) < 0).filter(pf);
+  const frozenAll  = tasks.filter(t => t.started && loopAgeDays(t) >= LOOP_REVIEW_DAYS).filter(pf);
+  const monthAll   = tasks.filter(t => t.horizon === 'month' && (!t.recurring || t.recurring === 'none') && !t.waiting).filter(pf);
+  const maybeAll   = tasks.filter(t => t.horizon === 'maybe').filter(pf);
+  const laterAll   = tasks.filter(t => t.horizon === 'later').filter(pf);
+  const overdue = reviewFilter.sec.overdue ? overdueAll : [];
+  const frozen  = reviewFilter.sec.frozen  ? frozenAll  : [];
+  const month   = reviewFilter.sec.month   ? monthAll   : [];
+  const maybe   = reviewFilter.sec.maybe   ? maybeAll   : [];
+  const later   = reviewFilter.sec.later   ? laterAll   : [];
 
-  let html = '';
+  // Filterleiste: Sektions-Chips (mit Anzahl) + Projektauswahl
+  const chip = (key, label, count) =>
+    `<button class="qe-btn${reviewFilter.sec[key] ? ' rv-on' : ''}" onclick="reviewToggleSec('${key}',event)">${label} ${count}</button>`;
+  let html = `<div class="rv-filter">
+    ${chip('frozen', '🧊', frozenAll.length)}${chip('overdue', '⚠️', overdueAll.length)}${chip('month', '🗓 Monat', monthAll.length)}${chip('later', '🕰 Irgendwann', laterAll.length)}${chip('maybe', '🤔 Vielleicht', maybeAll.length)}
+    <select class="rv-proj" onchange="reviewSetProject(this.value)">
+      <option value="">📁 Alle Projekte</option>
+      ${projects.filter(p => p.status !== 'done').map(p =>
+        `<option value="${p.id}"${reviewFilter.projectId === p.id ? ' selected' : ''}>${escHtml(p.name)}</option>`).join('')}
+    </select>
+  </div>`;
 
   if (frozen.length) {
     html += `<div class="section-header"><span class="section-label" style="color:var(--danger)">🧊 Festgefahrene Schleifen (${frozen.length})</span><div class="section-line"></div></div>`;

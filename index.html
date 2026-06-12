@@ -887,6 +887,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   <button class="more-item" id="notif-btn" onclick="moreAction(notifToggle)">🔕 Erinnerungen aus</button>
   <button class="more-item" onclick="moreAction(function(){switchTab('projects')})">📁 Projekte</button>
   <button class="more-item" onclick="moreAction(function(){switchTab('log')})">📋 Protokoll</button>
+  <button class="more-item" id="fontscale-btn" onclick="event.stopPropagation();cycleFontScale()">🔠 Schrift: 100 %</button>
   <div class="more-sep"></div>
   <button class="more-item" style="color:var(--danger);" onclick="authSignOut()">⎋ Abmelden</button>
 </div>
@@ -2353,6 +2354,28 @@ function dayReportDismiss() {
   localStorage.setItem(DAYREPORT_KEY, todayStr());
   render();
 }
+
+// ── SCHRIFTGRÖSSE (100–130 %, pro Gerät gespeichert) ──
+const FONTSCALE_KEY = 'iab_fontscale_v1';
+const FONTSCALE_STEPS = [100, 110, 120, 130];
+
+function applyFontScale() {
+  const s = parseInt(localStorage.getItem(FONTSCALE_KEY) || '100', 10);
+  const scale = FONTSCALE_STEPS.includes(s) ? s : 100;
+  document.documentElement.style.fontSize = (16 * scale / 100) + 'px';
+  const b = document.getElementById('fontscale-btn');
+  if (b) b.textContent = '🔠 Schrift: ' + scale + ' %';
+  return scale;
+}
+
+function cycleFontScale() {
+  const cur = applyFontScale();
+  const next = FONTSCALE_STEPS[(FONTSCALE_STEPS.indexOf(cur) + 1) % FONTSCALE_STEPS.length];
+  localStorage.setItem(FONTSCALE_KEY, String(next));
+  applyFontScale();
+  showToast('🔠 Schriftgröße: ' + next + ' %');
+}
+applyFontScale();
 
 // ── MEHR-MENÜ ──
 function toggleMoreMenu(ev) {

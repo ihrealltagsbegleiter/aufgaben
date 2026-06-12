@@ -609,7 +609,7 @@ input[type=number] { max-width: 80px; text-align: center; }
   :root { --sidebar: 100%; }
   .app-body { flex-direction: column; }
   .sidebar { width: 100%; height: auto; max-height: 50dvh; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto; flex-wrap: nowrap; padding: 6px 8px; gap: 0; }
-  .sidebar-section { padding: 0; display: flex; gap: 2px; }
+  .sidebar-section { display: contents; } /* Gruppen auflösen: alle Icons gleich breit in einer Reihe */
   .sidebar-label { display: none; }
   .sidebar-divider { display: none; }
   .sidebar { justify-content: space-between; overflow-x: visible; }
@@ -931,6 +931,9 @@ body.light-mode .quick-alt-btn.sel { background: rgba(26,127,55,.08); }
 .rv-filter .qe-btn { opacity: 0.45; }
 .rv-filter .qe-btn.rv-on { opacity: 1; border-color: var(--accent); color: var(--accent); }
 .rv-proj { background: var(--surface2); color: var(--text); border: 1px solid var(--border2); border-radius: var(--r); padding: 5px 8px; font-size: 0.78rem; margin-left: auto; }
+/* ── Nav ohne Gruppierung (06/2026): eine durchgehende Liste ── */
+.sidebar-label { display: none; }
+.sidebar-divider { display: none; }
 </style>
 </head>
 <body>

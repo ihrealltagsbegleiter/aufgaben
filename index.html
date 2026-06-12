@@ -3956,19 +3956,27 @@ async function logClearAll() {
   old.forEach(e => sbDelete('log', e.id)); // best effort Aufräumen
 }
 
-// ── FOCUS MODE ──
+// ── FOCUS MODE (Standard: AN, pro Gerät gespeichert) ──
+const FOCUS_KEY = 'iab_focus_v1';
 let focusMode = false;
 
-function toggleFocusMode() {
-  focusMode = !focusMode;
+function applyFocusMode() {
+  focusMode = localStorage.getItem(FOCUS_KEY) !== 'off'; // Default: Fokus zuerst
   document.body.classList.toggle('focus-mode', focusMode);
   const btn = document.getElementById('focus-btn');
   if (btn) {
     btn.classList.toggle('active', focusMode);
-    btn.title = focusMode ? 'Fokus-Modus aktiv – klicken zum Beenden' : 'Fokus-Modus (Tags ausblenden)';
+    btn.title = focusMode ? 'Fokus-Modus aktiv – klicken für alle Infos' : 'Fokus-Modus (Tags ausblenden)';
   }
-  showToast(focusMode ? '◎ Fokus-Modus aktiv' : '◎ Fokus-Modus aus');
+  return focusMode;
 }
+
+function toggleFocusMode() {
+  localStorage.setItem(FOCUS_KEY, focusMode ? 'off' : 'on');
+  applyFocusMode();
+  showToast(focusMode ? '◎ Fokus-Modus – nur das Wesentliche' : '◎ Alle Infos sichtbar');
+}
+applyFocusMode();
 
 
 

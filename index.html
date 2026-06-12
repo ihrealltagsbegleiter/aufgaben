@@ -611,12 +611,14 @@ input[type=number] { max-width: 80px; text-align: center; }
   .sidebar { width: 100%; height: auto; max-height: 50dvh; border-right: none; border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto; flex-wrap: nowrap; padding: 6px 8px; gap: 0; }
   .sidebar-section { padding: 0; display: flex; gap: 2px; }
   .sidebar-label { display: none; }
-  .sidebar-divider { display: block; width: 2px; height: 36px; align-self: center; margin: 0 6px; background: var(--border2); flex-shrink: 0; }
-  .nav-item { padding: 9px 12px 7px; white-space: nowrap; flex-direction: column; gap: 3px; min-width: 64px; min-height: 56px; justify-content: center; font-size: 0.7rem; position: relative; margin: 0 1px; }
+  .sidebar-divider { display: none; }
+  .sidebar { justify-content: space-between; overflow-x: visible; }
+  .sidebar-section { flex: 1; justify-content: space-around; }
+  .nav-item { padding: 7px 2px 5px; white-space: nowrap; flex-direction: column; min-width: 0; flex: 1; min-height: 42px; justify-content: center; position: relative; margin: 0; }
   .nav-item.active { border: 1px solid rgba(57,255,20,.35); }
-  .nav-item .ni-icon { margin-right: 0; font-size: 1.35rem; width: auto; }
-  .nav-item .ni-label { display: block; flex: none; font-size: 0.74rem; letter-spacing: 0.01em; font-weight: 500; }
-  .nav-item .ni-badge { position: absolute; top: 2px; right: 4px; font-size: 0.62rem; padding: 0 4px; min-width: 16px; height: 16px; }
+  .nav-item .ni-icon { margin-right: 0; font-size: 1.15rem; width: auto; }
+  .nav-item .ni-label { display: none; }
+  .nav-item .ni-badge { position: absolute; top: 0; right: 2px; font-size: 0.56rem; padding: 0 3px; min-width: 13px; height: 13px; line-height: 13px; }
   /* Dropdown-Panels: durch die Buttonverteilung liefen sie links aus dem Bild →
      auf Mobile volle Breite erzwingen (!important schlägt die per JS gesetzten Inline-Werte) */
   .filter-panel, .sort-menu { left: 8px !important; right: 8px !important; min-width: 0; max-height: 70dvh; overflow-y: auto; }

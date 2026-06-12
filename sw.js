@@ -1,6 +1,6 @@
 // Aufgaben PWA Service Worker v2 – Network-First
 // Scope: /aufgaben/  |  Keine Abhängigkeit zu anderen App-Repos
-const CACHE = 'iab-aufgaben-v34';
+const CACHE = 'iab-aufgaben-v35';
 const APP_SHELL = [
   '/aufgaben/',
   '/aufgaben/index.html',

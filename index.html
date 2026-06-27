@@ -1340,7 +1340,14 @@ const SB_HEADERS = {
 
 // ── LOCAL STORAGE (offline-first cache) ──
 const STORE_KEY   = 'iab_tasks_v2';
-const DONE_KEY    = 'iab_done_v2';
+const DONE_KEY       = 'iab_done_v2';
+const TOMBSTONE_KEY  = 'iab_tombstones_v1';
+function loadPendingTombstones() {
+  try { return JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || '{}'); } catch { return {}; }
+}
+function savePendingTombstones(obj) {
+  localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(obj));
+}
 const PROJECT_KEY = 'iab_projects_v1';
 const LOG_KEY     = 'iab_log_v1';
 
@@ -1467,14 +1474,19 @@ function sbUpsertDone(doneObj) {
 // Alles, was lokal liegt, sofort in die Cloud schieben (Reconnect / manueller Sync)
 async function sbPushAll() {
   for (const t of Object.values(syncDebounce)) clearTimeout(t);
+  const tombstones = Object.values(loadPendingTombstones());
+  const allTaskRows = [
+    ...tasks.map(t => ({ id: t.id, data: t })),
+    ...tombstones.map(t => ({ id: t.id, data: t }))
+  ];
   const results = await Promise.all([
-    sbUpsertNow('tasks',    tasks.map(t => ({ id: t.id, data: t }))),
+    sbUpsertNow('tasks',    allTaskRows),
     sbUpsertNow('projects', projects.map(p => ({ id: p.id, data: p }))),
     sbUpsertNow('done_log', Object.entries(loadDone()).map(([id, date]) => ({ id, data: { id, date } }))),
     sbUpsertNow('log',      logEntries.slice(-500).map(e => ({ id: e.id, data: e })))
   ]);
   const allOk = results.every(Boolean);
-  if (allOk) pendingPush = false;
+  if (allOk) { pendingPush = false; savePendingTombstones({}); }
   return allOk;
 }
 
@@ -1554,8 +1566,17 @@ async function sbDelete(table, id) {
 // Bleibt 30 Tage bestehen (GC in sbLoadAll) — ein sofortiges Hard-Delete würde
 // Offline-Geräten die Chance nehmen, die Löschung mitzubekommen.
 async function sbUpsertTombstone(deletedTask) {
+  // Tombstone sofort in Pending-Queue sichern — bleibt erhalten falls Upload scheitert
+  const pending = loadPendingTombstones();
+  pending[deletedTask.id] = deletedTask;
+  savePendingTombstones(pending);
   const ok = await sbUpsertNow('tasks', [{ id: deletedTask.id, data: deletedTask }]);
-  if (ok) setSyncStatus('ok');
+  if (ok) {
+    const p = loadPendingTombstones();
+    delete p[deletedTask.id];
+    savePendingTombstones(p);
+    setSyncStatus('ok');
+  }
 }
 
 // ── STATE ──

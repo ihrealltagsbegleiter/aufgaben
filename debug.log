@@ -1,0 +1,31 @@
+⚠️  SUPABASE_ANON_KEY hat altes JWT-Format → nutze App-Key als Fallback
+🔗 Supabase: https://cuukfowezhcosjnuckuo.supabase.co
+🔑 Key-Typ: sb_publishable_...
+📋 11 ToDo(s), lade bestehende Aufgaben...
+   0 bestehende Aufgaben.
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Drei neue, niedrigrisiko soziale Settings auswählen (z. B. eine Yoga-Class, ein Buchclub, ein Ehrenamtsabend) und verbindlich anmelden
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: In jedem Setting innerhalb der ersten Woche ein kleines, klares "Nein" platzieren (z. B. "Nein, danke" zu einer Bitte) und die Reaktion schriftlich protokollieren
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Wöchentliche Reflexion durchführen: Welche Reaktionen traten auf, wie veränderte sich Entscheidungsgefühl und Körperzustand? Ergebnisse in 10 Minuten Journal notieren
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Eine 30-minütige Session zur "Boundary-Reconsolidation" planen: Psychoedukation (Konditionierung), Expositionsplan, Nacharbeit der Feldversuche
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Ein einfaches Protokoll bereitstellen (3 Fragen + Körpercheckliste) zur Erfassung von Reaktionen nach jedem gesetzten "Nein"
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Recherchieren, wie man in Plot Automatisierungen basierend auf Schlüsselwörtern einrichten kann
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Den Mechanismus des "Selbstschutzes" und dessen Auswirkungen auf die Erfolgs- und Misserfolgsverarbeitung mit der Psychotherapeutin besprechen
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Bücher bestellen
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Wimka antworten
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Superbase Datenbank aufräumen und die Tabellen löschen, die wir gar nicht benutzen
+  ⚠️  POST → HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"tasks\""}
+❌ Fehler: Pflanze für Laura kaufen
+
+========================================
+✅ 0 neue Aufgabe(n) eingetragen.
+❌ 11 Fehler

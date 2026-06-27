@@ -3,9 +3,19 @@
 import json, time, subprocess, os, sys
 from datetime import datetime, timezone
 
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
-SUPABASE_KEY = os.environ["SUPABASE_ANON_KEY"]
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+# Secrets-Check: Laut abbrechen statt still scheitern
+if not SUPABASE_URL:
+    print("❌ FEHLER: SUPABASE_URL nicht gesetzt (GitHub Secret fehlt?)")
+    sys.exit(1)
+if not SUPABASE_KEY:
+    print("❌ FEHLER: SUPABASE_ANON_KEY nicht gesetzt (GitHub Secret fehlt?)")
+    sys.exit(1)
+
+print(f"🔗 Supabase: {SUPABASE_URL}")
 
 def curl_get(url):
     r = subprocess.run([
@@ -14,6 +24,9 @@ def curl_get(url):
         "-H", f"Authorization: Bearer {SUPABASE_KEY}",
         url
     ], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"⚠️  curl GET fehlgeschlagen (code {r.returncode}): {r.stderr}")
+        return []
     return json.loads(r.stdout) if r.stdout.strip() else []
 
 def curl_post(data):
@@ -26,12 +39,16 @@ def curl_post(data):
         "-d", json.dumps(data),
         f"{SUPABASE_URL}/rest/v1/tasks"
     ], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  ⚠️  curl POST fehlgeschlagen (code {r.returncode}): {r.stderr}")
     return r.returncode == 0
 
 todos = json.loads(open("pending-todos.json").read())
 if not todos:
-    print("Keine neuen ToDos.")
+    print("ℹ️  Keine neuen ToDos in pending-todos.json.")
     sys.exit(0)
+
+print(f"📋 {len(todos)} ToDo(s) gefunden, prüfe gegen bestehende Aufgaben...")
 
 rows = curl_get(f"{SUPABASE_URL}/rest/v1/tasks?select=data")
 existing = set()
@@ -43,8 +60,10 @@ for row in rows:
     if d.get("title"):
         existing.add(d["title"].lower().strip())
 
-print(f"{len(todos)} ToDo(s) zu prüfen | {len(existing)} bestehende Aufgaben")
+print(f"   {len(existing)} bestehende Aufgaben geladen.")
+
 inserted = 0
+errors = 0
 
 for title in todos:
     if title.lower().strip() in existing:
@@ -69,6 +88,11 @@ for title in todos:
         existing.add(title.lower().strip())
         inserted += 1
     else:
-        print(f"❌ Fehler: {title}")
+        print(f"❌ Fehler beim Einfügen: {title}")
+        errors += 1
 
-print(f"\n{inserted} neue Aufgabe(n) eingetragen.")
+print(f"\n{'='*40}")
+print(f"✅ {inserted} neue Aufgabe(n) eingetragen.")
+if errors:
+    print(f"❌ {errors} Fehler — Supabase-URL/Key prüfen!")
+    sys.exit(1)

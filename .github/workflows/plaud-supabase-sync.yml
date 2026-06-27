@@ -23,6 +23,7 @@ jobs:
         run: python3 supabase_sync.py
 
       - name: pending-todos.json leeren
+        if: success()
         run: |
           echo "[]" > pending-todos.json
           git config user.email "plaud-sync@github-actions"

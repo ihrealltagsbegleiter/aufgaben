@@ -7,7 +7,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 TODAY = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-# Secrets-Check: Laut abbrechen statt still scheitern
+# Secrets-Check
 if not SUPABASE_URL:
     print("❌ FEHLER: SUPABASE_URL nicht gesetzt (GitHub Secret fehlt?)")
     sys.exit(1)
@@ -17,31 +17,48 @@ if not SUPABASE_KEY:
 
 print(f"🔗 Supabase: {SUPABASE_URL}")
 
-def curl_get(url):
-    r = subprocess.run([
-        "curl", "-sf",
+
+def curl_request(method, url, data=None):
+    """HTTP-Request mit vollständiger Fehlerausgabe (Body + Status)."""
+    cmd = [
+        "curl", "-s", "-w", "\nHTTP_STATUS:%{http_code}",
         "-H", f"apikey: {SUPABASE_KEY}",
         "-H", f"Authorization: Bearer {SUPABASE_KEY}",
-        url
-    ], capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f"⚠️  curl GET fehlgeschlagen (code {r.returncode}): {r.stderr}")
+    ]
+    if method == "POST":
+        cmd += ["-X", "POST",
+                "-H", "Content-Type: application/json",
+                "-H", "Prefer: return=minimal",
+                "-d", json.dumps(data)]
+    cmd.append(url)
+
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    parts = r.stdout.rsplit("\nHTTP_STATUS:", 1)
+    body   = parts[0].strip() if parts else ""
+    status = int(parts[1].strip()) if len(parts) > 1 else 0
+
+    return status, body
+
+
+def curl_get(url):
+    status, body = curl_request("GET", url)
+    if status != 200:
+        print(f"⚠️  GET {url} → HTTP {status}: {body}")
         return []
-    return json.loads(r.stdout) if r.stdout.strip() else []
+    try:
+        return json.loads(body) if body else []
+    except Exception as e:
+        print(f"⚠️  JSON-Parse-Fehler: {e} | Body: {body[:200]}")
+        return []
+
 
 def curl_post(data):
-    r = subprocess.run([
-        "curl", "-sf", "-X", "POST",
-        "-H", f"apikey: {SUPABASE_KEY}",
-        "-H", f"Authorization: Bearer {SUPABASE_KEY}",
-        "-H", "Content-Type: application/json",
-        "-H", "Prefer: return=minimal",
-        "-d", json.dumps(data),
-        f"{SUPABASE_URL}/rest/v1/tasks"
-    ], capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f"  ⚠️  curl POST fehlgeschlagen (code {r.returncode}): {r.stderr}")
-    return r.returncode == 0
+    status, body = curl_request("POST", f"{SUPABASE_URL}/rest/v1/tasks", data)
+    if status not in (200, 201):
+        print(f"  ⚠️  POST → HTTP {status}: {body}")
+        return False
+    return True
+
 
 todos = json.loads(open("pending-todos.json").read())
 if not todos:
@@ -94,5 +111,5 @@ for title in todos:
 print(f"\n{'='*40}")
 print(f"✅ {inserted} neue Aufgabe(n) eingetragen.")
 if errors:
-    print(f"❌ {errors} Fehler — Supabase-URL/Key prüfen!")
+    print(f"❌ {errors} Fehler — siehe HTTP-Fehlermeldungen oben!")
     sys.exit(1)

@@ -101,8 +101,8 @@ for title in todos:
         "data": {
             "id": tid, "due": None, "frog": False, "note": "📥 Via Plaud",
             "dread": None, "eisen": 2, "title": title, "effort": "s",
-            "energy": "low", "impact": 1, "context": "quick", "created": TODAY,
-            "horizon": "today", "due_time": None, "projectId": None,
+            "energy": "low", "impact": 1, "context": "quick", 
+            "horizon": None, "due_time": None, "projectId": None,
             "recurDays": None, "recurring": None
         },
         "updated_at": datetime.now(timezone.utc).isoformat()
